@@ -33,7 +33,7 @@ SEED_TRANSACTIONS = [
     ("OPO",  "TFSA", "Buy", 633.634029280884,  14.8766),
 ]
 
-BENCHMARK_SYMBOL = "XEQT.TO"   # all-equity ETF used as the portfolio benchmark
+BENCHMARK_SYMBOL = "VFV.TO"   # all-equity ETF used as the portfolio benchmark
 BASE_CURRENCY = "CAD"
 
 
@@ -142,6 +142,9 @@ def set_manual_price(ticker, price):
 
 def upsert_snapshot(row: dict):
     """Insert or replace the snapshot for row['date']."""
+    # Coerce numpy scalars (np.float64 etc.) to native Python types — psycopg2
+    # cannot adapt numpy values, unlike SQLite which silently tolerates them.
+    row = {k: (v.item() if hasattr(v, "item") else v) for k, v in row.items()}
     d = row["date"]
     with engine.begin() as conn:
         conn.execute(snapshots.delete().where(snapshots.c.date == d))
