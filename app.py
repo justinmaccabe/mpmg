@@ -4,6 +4,7 @@ Run locally:   streamlit run app.py        (uses local SQLite, no setup)
 Deployed:      set DATABASE_URL secret      (uses Postgres so data persists)
 """
 import datetime as dt
+import os
 
 import pandas as pd
 import plotly.express as px
@@ -105,6 +106,29 @@ def color_pnl(v):
             return "color:#E0533D"
     return "color:#9AA0AB"
 
+
+def require_passcode():
+    """Gate the dashboard behind a shared passcode (set via the APP_PASSCODE
+    secret). If no passcode is configured, the gate is disabled (local dev)."""
+    code = ""
+    try:
+        code = st.secrets.get("APP_PASSCODE", "")
+    except Exception:
+        pass
+    code = str(code or os.environ.get("APP_PASSCODE", ""))
+    if not code or st.session_state.get("authed"):
+        return
+    entered = st.text_input("Enter passcode to view", type="password")
+    if entered:
+        if entered == code:
+            st.session_state["authed"] = True
+            st.rerun()
+        st.error("Incorrect passcode.")
+    st.caption("This dashboard is private. Enter the passcode to continue.")
+    st.stop()
+
+
+require_passcode()
 
 tab_overview, tab_accounts, tab_trade, tab_corr = st.tabs(
     ["Overview", "Accounts", "Add trade", "Correlations"])
