@@ -162,12 +162,14 @@ with tab_overview:
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=snaps["date"], y=snaps["market_value"],
                           mode="lines+markers", name="Market Value",
-                          line=dict(color=GOLD, width=2),
-                          fill="tozeroy", fillcolor="rgba(201,162,39,.08)"))
+                          line=dict(color="#4C9AFF", width=2),
+                          marker=dict(size=8),
+                          fill="tozeroy", fillcolor="rgba(76,154,255,.08)"))
             if snaps["book_value"].notna().any():
                 fig.add_trace(go.Scatter(x=snaps["date"], y=snaps["book_value"],
-                              mode="lines", name="Book Value",
-                              line=dict(color="#6C7280", width=1, dash="dot")))
+                              mode="lines+markers", name="Book Value",
+                              line=dict(color=GOLD, width=1.5, dash="dot"),
+                              marker=dict(size=7)))
             fig = style_fig(fig, 360)
             fig.update_yaxes(title="CAD", tickformat="$,.0f")
             fig.update_xaxes(type="date", tickformat="%b %d, %Y")
