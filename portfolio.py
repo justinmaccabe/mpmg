@@ -98,29 +98,22 @@ def _accounts(p):
     return "+".join(parts) if parts else "-"
 
 
-# Approximate *look-through* currency exposure of each holding's underlying
-# assets — i.e. the FX risk you actually bear, NOT the currency the fund trades
-# in. (XUS trades in CAD but holds US stocks, so it is ~100% USD risk.)
-# Fractions are (CAD, USD, Other). Rough public geographic mixes — edit freely.
-CURRENCY_LOOKTHROUGH = {
-    "ZMMK": (1.00, 0.00, 0.00),   # CAD money-market
-    "OPO":  (1.00, 0.00, 0.00),   # private CAD holding
-    "XUS":  (0.00, 1.00, 0.00),   # S&P 500, unhedged
-    "XEQT": (0.24, 0.45, 0.31),   # ~24% CAD / 45% US / 31% intl
-    "AVGE": (0.03, 0.58, 0.39),   # global all-cap, US-heavy
-}
+# Currency exposure = the fund's trading currency, with overrides for cases where
+# that misrepresents the real FX risk. XUS trades in CAD but holds the unhedged
+# S&P 500, so its risk is USD. (Add more overrides here if needed.)
+CURRENCY_OVERRIDE = {"XUS": "USD"}
 
 
 def currency_exposure(pos: pd.DataFrame) -> pd.Series:
-    """Look-through CAD / USD / Other exposure across the portfolio (base CAD)."""
-    buckets = {"CAD": 0.0, "USD": 0.0, "Other": 0.0}
+    """CAD vs USD exposure by market value (XUS treated as USD)."""
+    buckets = {}
     for _, r in pos.iterrows():
-        cad, usd, other = CURRENCY_LOOKTHROUGH.get(r["Ticker"], (1.0, 0.0, 0.0))
-        mv = r["Market Value"]
-        buckets["CAD"] += mv * cad
-        buckets["USD"] += mv * usd
-        buckets["Other"] += mv * other
-    return pd.Series(buckets)
+        ccy = CURRENCY_OVERRIDE.get(r["Ticker"], r["Cur"])
+        buckets[ccy] = buckets.get(ccy, 0.0) + r["Market Value"]
+    s = pd.Series(buckets)
+    order = ["CAD", "USD"]
+    return s.reindex([c for c in order if c in s.index] +
+                     [c for c in s.index if c not in order])
 
 
 def benchmark_daily_pct() -> float:

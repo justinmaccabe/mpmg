@@ -210,17 +210,17 @@ with tab_overview:
     with c2:
         st.subheader("Currency Exposure")
         cur = portfolio.currency_exposure(pos)
+        cmap = {"CAD": "#C9A227", "USD": "#4C9AFF"}
         fig = go.Figure(go.Pie(
             labels=cur.index, values=cur.values, hole=.6,
-            marker=dict(colors=["#C9A227", "#4C9AFF", "#16C784"]),
+            marker=dict(colors=[cmap.get(c, "#8A8F9A") for c in cur.index]),
             textinfo="label+percent"))
         fig.update_layout(annotations=[dict(
             text=f"{cur.get('USD', 0.0) / cur.sum():.0%} USD", x=.5, y=.5,
             font=dict(family=SERIF, size=15, color="#F4F4F4"), showarrow=False)])
         show(style_fig(fig, 360, legend=False))
-        st.caption("Look-through FX risk of the *underlying* assets, not trading "
-                   "currency — e.g. unhedged XUS counts as USD though it trades in "
-                   "CAD. Fund weights are approximate (set in portfolio.py).")
+        st.caption("By trading currency, except unhedged XUS is counted as USD "
+                   "(it holds the S&P 500 though it trades in CAD).")
 
 # ----------------------------------------------------------------- Accounts
 with tab_accounts:
