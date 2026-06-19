@@ -15,7 +15,7 @@ import db
 import portfolio
 
 st.set_page_config(page_title="Maccabe Portfolio Management Group",
-                   page_icon="🤑", layout="wide")
+                   page_icon="◆", layout="wide")
 db.init_db()
 
 # ----------------------------------------------------------------- styling
