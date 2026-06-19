@@ -98,6 +98,31 @@ def _accounts(p):
     return "+".join(parts) if parts else "-"
 
 
+# Approximate *look-through* currency exposure of each holding's underlying
+# assets — i.e. the FX risk you actually bear, NOT the currency the fund trades
+# in. (XUS trades in CAD but holds US stocks, so it is ~100% USD risk.)
+# Fractions are (CAD, USD, Other). Rough public geographic mixes — edit freely.
+CURRENCY_LOOKTHROUGH = {
+    "ZMMK": (1.00, 0.00, 0.00),   # CAD money-market
+    "OPO":  (1.00, 0.00, 0.00),   # private CAD holding
+    "XUS":  (0.00, 1.00, 0.00),   # S&P 500, unhedged
+    "XEQT": (0.24, 0.45, 0.31),   # ~24% CAD / 45% US / 31% intl
+    "AVGE": (0.03, 0.58, 0.39),   # global all-cap, US-heavy
+}
+
+
+def currency_exposure(pos: pd.DataFrame) -> pd.Series:
+    """Look-through CAD / USD / Other exposure across the portfolio (base CAD)."""
+    buckets = {"CAD": 0.0, "USD": 0.0, "Other": 0.0}
+    for _, r in pos.iterrows():
+        cad, usd, other = CURRENCY_LOOKTHROUGH.get(r["Ticker"], (1.0, 0.0, 0.0))
+        mv = r["Market Value"]
+        buckets["CAD"] += mv * cad
+        buckets["USD"] += mv * usd
+        buckets["Other"] += mv * other
+    return pd.Series(buckets)
+
+
 def benchmark_daily_pct() -> float:
     q = pricelib.get_current_and_prev([BENCHMARK_SYMBOL])
     if BENCHMARK_SYMBOL in q.index:

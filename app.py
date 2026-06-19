@@ -209,17 +209,18 @@ with tab_overview:
             st.info("No snapshots yet — they appear once the daily job runs.")
     with c2:
         st.subheader("Currency Exposure")
-        cur = pos.groupby("Cur")["Market Value"].sum()
+        cur = portfolio.currency_exposure(pos)
         fig = go.Figure(go.Pie(
             labels=cur.index, values=cur.values, hole=.6,
             marker=dict(colors=["#C9A227", "#4C9AFF", "#16C784"]),
             textinfo="label+percent"))
-        usd = cur.get("USD", 0.0)
         fig.update_layout(annotations=[dict(
-            text=f"{usd / cur.sum():.0%} USD", x=.5, y=.5,
+            text=f"{cur.get('USD', 0.0) / cur.sum():.0%} USD", x=.5, y=.5,
             font=dict(family=SERIF, size=15, color="#F4F4F4"), showarrow=False)])
         show(style_fig(fig, 360, legend=False))
-        st.caption("Share of the book denominated in each currency — your FX risk.")
+        st.caption("Look-through FX risk of the *underlying* assets, not trading "
+                   "currency — e.g. unhedged XUS counts as USD though it trades in "
+                   "CAD. Fund weights are approximate (set in portfolio.py).")
 
 # ----------------------------------------------------------------- Accounts
 with tab_accounts:
