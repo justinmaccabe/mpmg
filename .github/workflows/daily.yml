@@ -1,0 +1,21 @@
+name: Daily portfolio snapshot
+
+on:
+  schedule:
+    # 21:05 UTC on weekdays — just after the TSX close (16:00 ET) year-round.
+    - cron: "5 21 * * 1-5"
+  workflow_dispatch:        # lets you trigger it by hand from the Actions tab
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Record snapshot
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python jobs/snapshot.py
