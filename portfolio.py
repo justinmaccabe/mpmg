@@ -124,6 +124,20 @@ def benchmark_daily_pct() -> float:
     return 0.0
 
 
+# Benchmarks for the relative-performance chart. Edit symbols/labels as you like.
+BENCHMARKS = {"Total Market": "VT", "S&P 500": "^GSPC"}
+
+
+def normalized_performance(symbols, period="1y") -> pd.DataFrame:
+    """Daily closes for each symbol, rebased to 100 at the start of the period."""
+    symbols = [s for s in dict.fromkeys(symbols) if s]   # de-dupe, keep order
+    hist = pricelib.get_history(symbols, period=period)
+    if hist.empty:
+        return hist
+    return hist.apply(lambda c: c / c.dropna().iloc[0] * 100
+                      if c.dropna().size else c)
+
+
 def correlation_matrix(instruments: pd.DataFrame, period="1y") -> pd.DataFrame:
     """Correlation of daily returns across non-private holdings."""
     inst = instruments[(~instruments["is_private"]) & instruments["yf_symbol"].notna()]

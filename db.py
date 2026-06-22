@@ -133,6 +133,11 @@ def add_transaction(date, ticker, account, action, shares, price, fees=0.0):
         ))
 
 
+def delete_transaction(tx_id: int):
+    with engine.begin() as conn:
+        conn.execute(transactions.delete().where(transactions.c.id == int(tx_id)))
+
+
 def set_manual_price(ticker, price):
     with engine.begin() as conn:
         conn.execute(instruments.update()

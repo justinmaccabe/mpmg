@@ -75,8 +75,16 @@ def load_corr():
     return portfolio.correlation_matrix(db.get_instruments_df())
 
 
+HIDE = False          # toggled below; when True, dollar amounts are masked
+MASK = "$ •••••"
+
+
 def money(x):
-    return f"${x:,.2f}"
+    return MASK if HIDE else f"${x:,.2f}"
+
+
+def fmt_money0(v):
+    return MASK if HIDE else f"${v:,.0f}"
 
 
 def style_fig(fig, height=360, legend=True):
@@ -130,8 +138,13 @@ def require_passcode():
 
 require_passcode()
 
-tab_overview, tab_accounts, tab_trade, tab_corr = st.tabs(
-    ["Overview", "Accounts", "Add trade", "Correlations"])
+with st.sidebar:
+    st.markdown("### Display")
+    HIDE = st.toggle("🙈 Hide balances", value=False,
+                     help="Mask dollar amounts. Percentages stay visible.")
+
+tab_overview, tab_accounts, tab_bench, tab_trade, tab_corr = st.tabs(
+    ["Overview", "Accounts", "Benchmarks", "Add trade", "Correlations"])
 
 # ----------------------------------------------------------------- Overview
 with tab_overview:
@@ -153,17 +166,24 @@ with tab_overview:
                 labels=pos["Ticker"], values=pos["Market Value"], hole=.6,
                 marker=dict(colors=PALETTE), textinfo="label+percent"))
             fig.update_layout(annotations=[dict(
-                text=f"{money(totals['market_value'])}", x=.5, y=.5,
+                text="" if HIDE else money(totals["market_value"]), x=.5, y=.5,
                 font=dict(family=SERIF, size=16, color="#F4F4F4"), showarrow=False)])
             show(style_fig(fig, 360, legend=False))
         with right:
-            st.subheader("Gain / Loss by Holding")
-            g = pos.sort_values("Gain/Loss $")
+            # show % when balances are hidden, $ otherwise
+            metric = "Gain/Loss %" if HIDE else "Gain/Loss $"
+            st.subheader("Gain / Loss by Holding" + (" (%)" if HIDE else ""))
+            g = pos.sort_values(metric)
+            txt = ([f"{v:.2%}" for v in g[metric]] if HIDE
+                   else [money(v) for v in g[metric]])
             fig = go.Figure(go.Bar(
-                x=g["Gain/Loss $"], y=g["Ticker"], orientation="h",
-                marker_color=["#E0533D" if v < 0 else "#16C784" for v in g["Gain/Loss $"]],
-                text=[money(v) for v in g["Gain/Loss $"]], textposition="auto"))
-            show(style_fig(fig, 360, legend=False))
+                x=g[metric], y=g["Ticker"], orientation="h",
+                marker_color=["#E0533D" if v < 0 else "#16C784" for v in g[metric]],
+                text=txt, textposition="auto"))
+            fig = style_fig(fig, 360, legend=False)
+            if HIDE:
+                fig.update_xaxes(tickformat=".0%")
+            show(fig)
 
         st.subheader("Holdings")
         cols = ["Ticker", "Account", "Shares", "ACB", "Price", "Cur",
@@ -171,9 +191,9 @@ with tab_overview:
                 "Daily P&L $"]
         styler = (pos[cols].style
                   .format({"Shares": "{:,.2f}", "ACB": "${:,.2f}", "Price": "${:,.2f}",
-                           "Market Value": "${:,.0f}", "Book Value": "${:,.0f}",
-                           "Gain/Loss $": "${:,.0f}", "Gain/Loss %": "{:.2%}",
-                           "Daily P&L $": "${:,.0f}"})
+                           "Market Value": fmt_money0, "Book Value": fmt_money0,
+                           "Gain/Loss $": fmt_money0, "Gain/Loss %": "{:.2%}",
+                           "Daily P&L $": fmt_money0})
                   .map(color_pnl, subset=["Gain/Loss $", "Gain/Loss %", "Daily P&L $"]))
         st.dataframe(styler, width="stretch", hide_index=True)
 
@@ -196,6 +216,8 @@ with tab_overview:
                               marker=dict(size=7)))
             fig = style_fig(fig, 360)
             fig.update_yaxes(title="CAD", tickformat="$,.0f")
+            if HIDE:
+                fig.update_yaxes(showticklabels=False, title=None)
             fig.update_xaxes(type="date", tickformat="%b %d, %Y")
             if len(snaps) == 1:           # avoid a degenerate sub-second axis
                 d = snaps["date"].iloc[0]
@@ -229,10 +251,14 @@ with tab_accounts:
         st.info("No positions yet.")
     else:
         amv = totals["account_mv"]
-        c1, c2, c3 = st.columns(3)
-        c1.metric("FHSA Balance", money(amv["FHSA"]))
-        c2.metric("TFSA Balance", money(amv["TFSA"]))
         tot = amv["FHSA"] + amv["TFSA"]
+        c1, c2, c3 = st.columns(3)
+        c1.metric("FHSA Balance", money(amv["FHSA"]),
+                  f"{amv['FHSA'] / tot:.1%} of total" if tot else None,
+                  delta_color="off")
+        c2.metric("TFSA Balance", money(amv["TFSA"]),
+                  f"{amv['TFSA'] / tot:.1%} of total" if tot else None,
+                  delta_color="off")
         c3.metric("Combined", money(tot))
 
         left, right = st.columns(2)
@@ -253,6 +279,8 @@ with tab_accounts:
             fig = style_fig(fig, 360)
             fig.update_layout(barmode="stack")
             fig.update_yaxes(title="CAD", tickformat="$,.0f")
+            if HIDE:
+                fig.update_yaxes(showticklabels=False, title=None)
             show(fig)
 
         st.subheader("Per-Account Detail")
@@ -263,8 +291,52 @@ with tab_accounts:
             "MV TFSA": detail["MV TFSA"].sum(), "Total": detail["Total"].sum()}])
         detail = pd.concat([detail, total_row], ignore_index=True)
         st.dataframe(detail.style.format(
-            {"MV FHSA": "${:,.0f}", "MV TFSA": "${:,.0f}", "Total": "${:,.0f}"}),
+            {"MV FHSA": fmt_money0, "MV TFSA": fmt_money0, "Total": fmt_money0}),
             width="stretch", hide_index=True)
+
+# ----------------------------------------------------------------- Benchmarks
+with tab_bench:
+    st.subheader("Performance vs Benchmarks")
+    inst = db.get_instruments_df()
+    holds = inst[(~inst["is_private"]) & inst["yf_symbol"].notna()]
+    name_by_sym = dict(zip(holds["yf_symbol"], holds["ticker"]))
+
+    ctrl = st.columns([2, 1, 1])
+    period = ctrl[0].selectbox("Period", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
+    show_tm = ctrl[1].checkbox("Total Market", value=True)
+    show_sp = ctrl[2].checkbox("S&P 500", value=True)
+    chosen = st.multiselect("Holdings to plot", list(name_by_sym.values()),
+                            default=list(name_by_sym.values()))
+
+    syms = [s for s, n in name_by_sym.items() if n in chosen]
+    benches = {}
+    if show_tm:
+        benches[portfolio.BENCHMARKS["Total Market"]] = "Total Market"
+    if show_sp:
+        benches[portfolio.BENCHMARKS["S&P 500"]] = "S&P 500"
+
+    perf = portfolio.normalized_performance(syms + list(benches), period)
+    if perf.empty:
+        st.warning("Couldn't load price history (offline?). Try again shortly.")
+    else:
+        fig = go.Figure()
+        for s in syms:
+            if s in perf.columns:
+                fig.add_trace(go.Scatter(x=perf.index, y=perf[s],
+                              mode="lines", name=name_by_sym[s]))
+        bcolors = {"Total Market": GOLD, "S&P 500": "#F4F4F4"}
+        for s, label in benches.items():
+            if s in perf.columns:
+                fig.add_trace(go.Scatter(x=perf.index, y=perf[s], mode="lines",
+                              name=label,
+                              line=dict(width=3, dash="dash", color=bcolors[label])))
+        fig = style_fig(fig, 480)
+        fig.update_yaxes(title="Growth of $100")
+        fig.update_xaxes(type="date", tickformat="%b %Y")
+        show(fig)
+        st.caption("Each line rebased to 100 at the start of the period — relative "
+                   "price performance (balances never shown here). Total Market = VT, "
+                   "S&P 500 = ^GSPC; uncheck either above to remove it.")
 
 # ----------------------------------------------------------------- Add trade
 with tab_trade:
@@ -286,7 +358,24 @@ with tab_trade:
             st.success(f"Added {action} {shares} {ticker} ({account}).")
 
     st.subheader("Ledger")
-    st.dataframe(db.get_transactions_df(), width="stretch", hide_index=True)
+    ledger = db.get_transactions_df()
+    st.dataframe(ledger, width="stretch", hide_index=True)
+
+    st.subheader("Remove a Transaction")
+    if ledger.empty:
+        st.caption("No transactions to remove.")
+    else:
+        labels = {
+            f"#{int(r.id)} · {r.date} · {r.action} {r.shares:g} {r.ticker} "
+            f"({r.account}) @ ${r.price:g}": int(r.id)
+            for r in ledger.itertuples()
+        }
+        pick = st.selectbox("Select a transaction", list(labels))
+        if st.button("Delete selected transaction", type="primary"):
+            db.delete_transaction(labels[pick])
+            st.cache_data.clear()
+            st.success(f"Deleted transaction {pick.split(' · ')[0]}.")
+            st.rerun()
 
 # ----------------------------------------------------------------- Correlations
 with tab_corr:
