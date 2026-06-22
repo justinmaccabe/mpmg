@@ -233,9 +233,9 @@ if not GUEST and not st.session_state.get("opo_skip"):
         opo_buy_dialog(_opo_due)
 
 (tab_overview, tab_accounts, tab_bench, tab_contrib,
- tab_trade, tab_corr) = st.tabs(
+ tab_trade, tab_corr, tab_ips) = st.tabs(
     ["Overview", "Accounts", "Benchmarks", "Contributions",
-     "Add trade", "Correlations"])
+     "Add trade", "Correlations", "IPS"])
 
 # ----------------------------------------------------------------- Overview
 with tab_overview:
@@ -559,6 +559,15 @@ with tab_trade:
             st.cache_data.clear()
             st.success(f"Deleted transaction {pick.split(' · ')[0]}.")
             st.rerun()
+
+# ----------------------------------------------------------------- IPS
+with tab_ips:
+    _ips_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ips.md")
+    try:
+        with open(_ips_path, encoding="utf-8") as f:
+            st.markdown(f.read())
+    except FileNotFoundError:
+        st.info("Investment Policy Statement not found (ips.md missing).")
 
 # ----------------------------------------------------------------- Correlations
 with tab_corr:
