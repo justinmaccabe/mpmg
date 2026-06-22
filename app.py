@@ -34,8 +34,12 @@ html, body, [class*="css"], .stApp, h1, h2, h3, h4, h5, p, div, span,
 #MainMenu, footer {{ visibility: hidden; }}
 
 /* branded header */
-.mpmg-header {{ border-bottom: 1px solid rgba(201,162,39,.35); padding: .25rem 0 1rem;
-    margin-bottom: 1.4rem; }}
+.mpmg-header {{ padding: .25rem 0 .15rem; }}
+.mpmg-rule {{ border: none; border-top: 1px solid rgba(201,162,39,.35);
+    margin: .35rem 0 1.3rem; }}
+[data-testid="stToggle"] label p, [data-testid="stCheckbox"] label p {{
+    color: {GOLD} !important; font-family: {SERIF} !important;
+    text-transform: uppercase; letter-spacing: .16em; font-size: .72rem !important; }}
 .mpmg-title {{ font-size: 2.55rem; font-weight: 700; letter-spacing: .04em;
     color: #F4F4F4; line-height: 1.05; }}
 .mpmg-title .amp {{ color: {GOLD}; }}
@@ -58,8 +62,6 @@ h2, h3 {{ color: #EDEDED; border-left: 3px solid {GOLD}; padding-left: .55rem; }
 
 <div class="mpmg-header">
   <div class="mpmg-title">Maccabe Portfolio Management <span class="amp">Group</span></div>
-  <div class="mpmg-sub">Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>
-  <div class="mpmg-asof">As of {dt.date.today():%B %d, %Y}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -73,6 +75,20 @@ def load_portfolio():
 @st.cache_data(ttl=3600)
 def load_corr():
     return portfolio.correlation_matrix(db.get_instruments_df())
+
+
+@st.cache_data(ttl=3600)
+def perf_all(period):
+    inst = db.get_instruments_df()
+    holds = inst[(~inst["is_private"]) & inst["yf_symbol"].notna()]
+    syms = list(holds["yf_symbol"]) + list(portfolio.BENCHMARKS.values())
+    return portfolio.normalized_performance(syms, period)
+
+
+@st.cache_data(ttl=3600)
+def perf_portfolio(period):
+    return portfolio.portfolio_performance(db.get_transactions_df(),
+                                           db.get_instruments_df(), period)
 
 
 HIDE = False          # toggled below; when True, dollar amounts are masked
@@ -138,10 +154,16 @@ def require_passcode():
 
 require_passcode()
 
-with st.sidebar:
-    st.markdown("### Display")
-    HIDE = st.toggle("🙈 Hide balances", value=False,
-                     help="Mask dollar amounts. Percentages stay visible.")
+hc1, hc2 = st.columns([5, 2], vertical_alignment="center")
+with hc1:
+    st.markdown(
+        "<div class='mpmg-sub'>Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>"
+        f"<div class='mpmg-asof'>As of {dt.date.today():%B %d, %Y}</div>",
+        unsafe_allow_html=True)
+with hc2:
+    HIDE = st.toggle("Hide Balances", value=False,
+                     help="Mask dollar amounts; percentages stay visible.")
+st.markdown("<hr class='mpmg-rule'>", unsafe_allow_html=True)
 
 tab_overview, tab_accounts, tab_bench, tab_trade, tab_corr = st.tabs(
     ["Overview", "Accounts", "Benchmarks", "Add trade", "Correlations"])
@@ -290,9 +312,16 @@ with tab_accounts:
             "Ticker": "Total", "MV FHSA": detail["MV FHSA"].sum(),
             "MV TFSA": detail["MV TFSA"].sum(), "Total": detail["Total"].sum()}])
         detail = pd.concat([detail, total_row], ignore_index=True)
-        st.dataframe(detail.style.format(
-            {"MV FHSA": fmt_money0, "MV TFSA": fmt_money0, "Total": fmt_money0}),
-            width="stretch", hide_index=True)
+        money_cols = ["MV FHSA", "MV TFSA", "Total"]
+        if HIDE:
+            grand = detail["Total"].iloc[-1] or 1
+            pct = detail.copy()
+            pct[money_cols] = pct[money_cols] / grand
+            st.dataframe(pct.style.format({c: "{:.1%}" for c in money_cols}),
+                         width="stretch", hide_index=True)
+        else:
+            st.dataframe(detail.style.format({c: "${:,.0f}" for c in money_cols}),
+                         width="stretch", hide_index=True)
 
 # ----------------------------------------------------------------- Benchmarks
 with tab_bench:
@@ -301,42 +330,43 @@ with tab_bench:
     holds = inst[(~inst["is_private"]) & inst["yf_symbol"].notna()]
     name_by_sym = dict(zip(holds["yf_symbol"], holds["ticker"]))
 
-    ctrl = st.columns([2, 1, 1])
+    ctrl = st.columns([2, 1, 1, 1])
     period = ctrl[0].selectbox("Period", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
-    show_tm = ctrl[1].checkbox("Total Market", value=True)
-    show_sp = ctrl[2].checkbox("S&P 500", value=True)
+    show_pf = ctrl[1].checkbox("Portfolio", value=True)
+    show_tm = ctrl[2].checkbox("Total Market", value=True)
+    show_sp = ctrl[3].checkbox("S&P 500", value=True)
     chosen = st.multiselect("Holdings to plot", list(name_by_sym.values()),
                             default=list(name_by_sym.values()))
 
-    syms = [s for s, n in name_by_sym.items() if n in chosen]
-    benches = {}
-    if show_tm:
-        benches[portfolio.BENCHMARKS["Total Market"]] = "Total Market"
-    if show_sp:
-        benches[portfolio.BENCHMARKS["S&P 500"]] = "S&P 500"
-
-    perf = portfolio.normalized_performance(syms + list(benches), period)
+    perf = perf_all(period)
     if perf.empty:
         st.warning("Couldn't load price history (offline?). Try again shortly.")
     else:
         fig = go.Figure()
-        for s in syms:
-            if s in perf.columns:
-                fig.add_trace(go.Scatter(x=perf.index, y=perf[s],
-                              mode="lines", name=name_by_sym[s]))
-        bcolors = {"Total Market": GOLD, "S&P 500": "#F4F4F4"}
-        for s, label in benches.items():
-            if s in perf.columns:
-                fig.add_trace(go.Scatter(x=perf.index, y=perf[s], mode="lines",
+        for sym, name in name_by_sym.items():
+            if name in chosen and sym in perf.columns:
+                fig.add_trace(go.Scatter(x=perf.index, y=perf[sym],
+                              mode="lines", name=name))
+        if show_pf:
+            pp = perf_portfolio(period)
+            if not pp.empty:
+                fig.add_trace(go.Scatter(x=pp.index, y=pp.values, mode="lines",
+                              name="Portfolio", line=dict(width=4, color="#4C9AFF")))
+        bench_color = {"Total Market": GOLD, "S&P 500": "#F4F4F4"}
+        bench_on = {"Total Market": show_tm, "S&P 500": show_sp}
+        for label, sym in portfolio.BENCHMARKS.items():
+            if bench_on[label] and sym in perf.columns:
+                fig.add_trace(go.Scatter(x=perf.index, y=perf[sym], mode="lines",
                               name=label,
-                              line=dict(width=3, dash="dash", color=bcolors[label])))
+                              line=dict(width=3, dash="dash", color=bench_color[label])))
         fig = style_fig(fig, 480)
         fig.update_yaxes(title="Growth of $100")
         fig.update_xaxes(type="date", tickformat="%b %Y")
         show(fig)
-        st.caption("Each line rebased to 100 at the start of the period — relative "
-                   "price performance (balances never shown here). Total Market = VT, "
-                   "S&P 500 = ^GSPC; uncheck either above to remove it.")
+        st.caption("Each line rebased to 100 at the period start — relative price "
+                   "performance (no balances shown). Portfolio = your current holdings "
+                   "backtested on price history (OPO excluded, no market data). "
+                   "Toggle Portfolio / Total Market (VT) / S&P 500 (^GSPC) above.")
 
 # ----------------------------------------------------------------- Add trade
 with tab_trade:

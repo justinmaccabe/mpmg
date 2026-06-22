@@ -138,6 +138,41 @@ def normalized_performance(symbols, period="1y") -> pd.DataFrame:
                       if c.dropna().size else c)
 
 
+def portfolio_performance(tx, instruments, period="1y") -> pd.Series:
+    """Backtest current holdings over their price history → value rebased to 100.
+
+    Uses today's share counts and current FX (consistent with the rest of the app).
+    Private holdings (no market data, e.g. OPO) are excluded.
+    """
+    pos = compute_positions(tx)
+    inst = instruments.set_index("ticker")
+    usd_cad = pricelib.get_usd_cad()
+    legs = []  # (yf_symbol, shares, fx)
+    for _, p in pos.iterrows():
+        t = p["ticker"]
+        if t not in inst.index or p["shares"] == 0:
+            continue
+        meta = inst.loc[t]
+        if meta["is_private"] or not meta["yf_symbol"]:
+            continue
+        legs.append((meta["yf_symbol"], p["shares"],
+                     usd_cad if meta["currency"] == "USD" else 1.0))
+    if not legs:
+        return pd.Series(dtype=float)
+    hist = pricelib.get_history([s for s, _, _ in legs], period=period)
+    if hist.empty:
+        return pd.Series(dtype=float)
+    value = None
+    for sym, shares, fx in legs:
+        if sym in hist.columns:
+            leg = hist[sym] * shares * fx
+            value = leg if value is None else value.add(leg)
+    value = value.dropna() if value is not None else pd.Series(dtype=float)
+    if value.empty:
+        return value
+    return value / value.iloc[0] * 100
+
+
 def correlation_matrix(instruments: pd.DataFrame, period="1y") -> pd.DataFrame:
     """Correlation of daily returns across non-private holdings."""
     inst = instruments[(~instruments["is_private"]) & instruments["yf_symbol"].notna()]
