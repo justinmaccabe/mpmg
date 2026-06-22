@@ -7,6 +7,7 @@ the FX on each purchase date — a deliberate simplification for a personal trac
 import numpy as np
 import pandas as pd
 
+import db
 import prices as pricelib
 from db import BASE_CURRENCY, BENCHMARK_SYMBOL
 
@@ -136,6 +137,29 @@ def normalized_performance(symbols, period="1y") -> pd.DataFrame:
         return hist
     return hist.apply(lambda c: c / c.dropna().iloc[0] * 100
                       if c.dropna().size else c)
+
+
+def tfsa_cumulative_room(year: int) -> float:
+    """Total TFSA room accrued from the year you turned 18 through `year`."""
+    start = db.USER_BIRTH_YEAR + 18
+    return float(sum(v for y, v in db.TFSA_ANNUAL_LIMITS.items()
+                     if start <= y <= year))
+
+
+def fhsa_status(contribs_by_year: dict, year: int) -> dict:
+    """FHSA room this year (annual + carryforward) and lifetime remaining."""
+    carry, used, avail = 0.0, 0.0, 0.0
+    for y in range(db.FHSA_OPEN_YEAR, year + 1):
+        room = db.FHSA_ANNUAL_LIMIT + carry
+        c = float(contribs_by_year.get(y, 0))
+        used += c
+        if y < year:
+            carry = min(db.FHSA_MAX_CARRYFORWARD, max(0.0, room - c))
+        else:
+            avail = max(0.0, room - c)
+    lifetime_remaining = max(0.0, db.FHSA_LIFETIME_LIMIT - used)
+    return {"available_this_year": min(avail, lifetime_remaining),
+            "used_lifetime": used, "lifetime_remaining": lifetime_remaining}
 
 
 def portfolio_performance(tx, instruments, period="1y") -> pd.Series:

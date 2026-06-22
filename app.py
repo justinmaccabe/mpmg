@@ -165,8 +165,10 @@ with hc2:
                      help="Mask dollar amounts; percentages stay visible.")
 st.markdown("<hr class='mpmg-rule'>", unsafe_allow_html=True)
 
-tab_overview, tab_accounts, tab_bench, tab_trade, tab_corr = st.tabs(
-    ["Overview", "Accounts", "Benchmarks", "Add trade", "Correlations"])
+(tab_overview, tab_accounts, tab_bench, tab_contrib,
+ tab_trade, tab_corr) = st.tabs(
+    ["Overview", "Accounts", "Benchmarks", "Contributions",
+     "Add trade", "Correlations"])
 
 # ----------------------------------------------------------------- Overview
 with tab_overview:
@@ -367,6 +369,79 @@ with tab_bench:
                    "performance (no balances shown). Portfolio = your current holdings "
                    "backtested on price history (OPO excluded, no market data). "
                    "Toggle Portfolio / Total Market (VT) / S&P 500 (^GSPC) above.")
+
+# ----------------------------------------------------------------- Contributions
+with tab_contrib:
+    st.subheader("Contribution Room")
+    cdf = db.get_contributions_df()
+    yr = dt.date.today().year
+    if not cdf.empty:
+        cdf = cdf.assign(year=pd.to_datetime(cdf["date"]).dt.year)
+
+    def by_year(acct):
+        if cdf.empty:
+            return {}
+        return cdf[cdf["account"] == acct].groupby("year")["amount"].sum().to_dict()
+
+    tfsa_by, fhsa_by = by_year("TFSA"), by_year("FHSA")
+    tfsa_room = portfolio.tfsa_cumulative_room(yr)
+    tfsa_used = sum(tfsa_by.values())
+    tfsa_ytd = tfsa_by.get(yr, 0.0)
+    fh = portfolio.fhsa_status(fhsa_by, yr)
+    fhsa_ytd = fhsa_by.get(yr, 0.0)
+
+    a, b = st.columns(2)
+    with a:
+        st.markdown("#### TFSA")
+        st.metric("Room remaining (all-time)", money(tfsa_room - tfsa_used),
+                  f"{tfsa_used / tfsa_room:.0%} of ${tfsa_room:,.0f} used",
+                  delta_color="off")
+        st.progress(min(1.0, max(0.0, tfsa_used / tfsa_room)))
+        st.caption(f"Contributed {money(tfsa_used)} all-time · {money(tfsa_ytd)} in "
+                   f"{yr}. Cumulative room since age 18 ({db.USER_BIRTH_YEAR + 18}): "
+                   f"${tfsa_room:,.0f}. All TFSAs (RBC + Optimize) share this limit.")
+        if tfsa_room - tfsa_used < 0:
+            st.error("Over-contributed — CRA charges 1%/month on the excess.")
+    with b:
+        st.markdown("#### FHSA")
+        st.metric("Room remaining this year", money(fh["available_this_year"]),
+                  "Maxed for the year" if fh["available_this_year"] <= 0 else None,
+                  delta_color="off")
+        st.progress(min(1.0, max(0.0, fh["used_lifetime"] / db.FHSA_LIFETIME_LIMIT)))
+        st.caption(f"Contributed {money(fhsa_ytd)} in {yr}. Lifetime "
+                   f"{money(fh['used_lifetime'])} of ${db.FHSA_LIFETIME_LIMIT:,.0f} "
+                   f"used · {money(fh['lifetime_remaining'])} remaining.")
+
+    if not cdf.empty:
+        st.subheader("Contributions by Year")
+        piv = cdf.pivot_table(index="year", columns="account", values="amount",
+                              aggfunc="sum", fill_value=0)
+        piv["Total"] = piv.sum(axis=1)
+        st.dataframe(piv.style.format(fmt_money0), width="stretch")
+
+    st.subheader("Log a Contribution")
+    with st.form("contrib", clear_on_submit=True):
+        cc = st.columns([1, 1, 1, 2])
+        cdate = cc[0].date_input("Date", dt.date.today(), key="cdate")
+        cacct = cc[1].selectbox("Account", ["TFSA", "FHSA"], key="cacct")
+        camt = cc[2].number_input("Amount", min_value=0.0, step=100.0, format="%.2f")
+        cnote = cc[3].text_input("Note", "")
+        if st.form_submit_button("Add contribution"):
+            db.add_contribution(cdate, cacct, camt, cnote)
+            st.success(f"Added {cacct} contribution.")
+            st.rerun()
+
+    if not cdf.empty:
+        st.subheader("Remove a Contribution")
+        clabels = {
+            f"#{int(r.id)} · {r.date} · {r.account} · {money(r.amount)} · {r.note}":
+            int(r.id) for r in cdf.itertuples()
+        }
+        cpick = st.selectbox("Select a contribution", list(clabels))
+        if st.button("Delete selected contribution", type="primary"):
+            db.delete_contribution(clabels[cpick])
+            st.success("Deleted.")
+            st.rerun()
 
 # ----------------------------------------------------------------- Add trade
 with tab_trade:
