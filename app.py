@@ -131,23 +131,32 @@ def color_pnl(v):
     return "color:#9AA0AB"
 
 
-def require_passcode():
-    """Gate the dashboard behind a shared passcode (set via the APP_PASSCODE
-    secret). If no passcode is configured, the gate is disabled (local dev)."""
-    code = ""
+def _secret(name, default=""):
     try:
-        code = st.secrets.get("APP_PASSCODE", "")
+        v = st.secrets.get(name, "")
     except Exception:
-        pass
-    code = str(code or os.environ.get("APP_PASSCODE", ""))
+        v = ""
+    return str(v or os.environ.get(name, "") or default)
+
+
+def require_passcode():
+    """Gate the dashboard. The main passcode (APP_PASSCODE) gives full access;
+    the guest passcode opens the full app locked in hidden-balances mode.
+    If no main passcode is configured, the gate is disabled (local dev)."""
+    code = _secret("APP_PASSCODE")
+    guest_code = _secret("APP_GUEST_PASSCODE", "guest")
     if not code or st.session_state.get("authed"):
         return
     entered = st.text_input("Enter passcode to view", type="password")
     if entered:
         if entered == code:
-            st.session_state["authed"] = True
+            st.session_state["authed"], st.session_state["guest"] = True, False
             st.rerun()
-        st.error("Incorrect passcode.")
+        elif entered == guest_code:
+            st.session_state["authed"], st.session_state["guest"] = True, True
+            st.rerun()
+        else:
+            st.error("Incorrect passcode.")
     st.caption("This dashboard is private. Enter the passcode to continue.")
     st.stop()
 
@@ -160,9 +169,12 @@ with hc1:
         "<div class='mpmg-sub'>Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>"
         f"<div class='mpmg-asof'>As of {dt.date.today():%B %d, %Y}</div>",
         unsafe_allow_html=True)
+GUEST = st.session_state.get("guest", False)
 with hc2:
-    HIDE = st.toggle("Hide Balances", value=False,
-                     help="Mask dollar amounts; percentages stay visible.")
+    HIDE = st.toggle("Hide Balances", value=GUEST, disabled=GUEST,
+                     help="Mask dollar amounts; percentages stay visible.") or GUEST
+    if GUEST:
+        st.caption("Guest view — balances locked")
 st.markdown("<hr class='mpmg-rule'>", unsafe_allow_html=True)
 
 (tab_overview, tab_accounts, tab_bench, tab_contrib,
