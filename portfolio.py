@@ -161,14 +161,36 @@ def leverage_metrics(market_value, loc_balance, prime, spread, yld, peak):
     }
 
 
+_FF_BASE = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+
+
+def _ff_csv(name, cols):
+    """Download a Ken French factor zip and parse its monthly block (decimal)."""
+    import io
+    import re
+    import urllib.request
+    import zipfile
+    data = urllib.request.urlopen(_FF_BASE + name + "_CSV.zip", timeout=30).read()
+    z = zipfile.ZipFile(io.BytesIO(data))
+    raw = z.read(z.namelist()[0]).decode("latin-1")
+    rows = []
+    for line in raw.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= len(cols) + 1 and re.fullmatch(r"\d{6}", parts[0]):
+            try:
+                rows.append([parts[0]] + [float(parts[i + 1]) for i in range(len(cols))])
+            except ValueError:
+                continue
+    df = pd.DataFrame(rows, columns=["date"] + cols)
+    df["date"] = pd.to_datetime(df["date"], format="%Y%m").dt.to_period("M").dt.to_timestamp("M")
+    return df.set_index("date") / 100.0
+
+
 def _get_ff_factors():
-    """Developed Fama-French 5 factors + momentum (monthly, decimal)."""
-    import pandas_datareader.data as web
-    f5 = web.DataReader("Developed_5_Factors", "famafrench")[0] / 100.0
-    mom = web.DataReader("Developed_Mom_Factor", "famafrench")[0] / 100.0
-    ff = f5.join(mom).rename(columns={"WML": "Mom"})
-    ff.index = ff.index.to_timestamp("M")
-    return ff
+    """Developed Fama-French 5 factors + momentum (monthly, decimal, month-end index)."""
+    f5 = _ff_csv("Developed_5_Factors", ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"])
+    mom = _ff_csv("Developed_Mom_Factor", ["WML"])
+    return f5.join(mom).rename(columns={"WML": "Mom"})
 
 
 def _regress_fund(symbol, ff, period):
