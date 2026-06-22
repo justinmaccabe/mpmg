@@ -139,6 +139,17 @@ def show(fig):
                     config={"displayModeBar": False})
 
 
+def flag(kind, text):
+    """Render a themed status flag (kind: 'ok' | 'warn' | 'bad')."""
+    palette = {"ok": "#16C784", "warn": GOLD, "bad": "#E0533D"}
+    c = palette.get(kind, GOLD)
+    st.markdown(
+        f"<div style=\"border-left:3px solid {c}; background:{c}14; color:#E8E8E8;"
+        f" font-family:{SERIF}; padding:.65rem 1rem; border-radius:6px;"
+        f" margin:.3rem 0; line-height:1.5;\">{text}</div>",
+        unsafe_allow_html=True)
+
+
 def color_pnl(v):
     if isinstance(v, (int, float)):
         if v > 0:
@@ -626,19 +637,19 @@ with tab_lev:
 
         st.markdown("##### IPS flags")
         if lev["drawdown_trigger"]:
-            st.error("Drawdown ≥ 50% from peak — IPS §8 mandatory strategy review.")
+            flag("bad", "Drawdown ≥ 50% from peak — IPS §8 mandatory strategy review.")
         else:
-            st.success(f"Drawdown {lev['drawdown']:.1%} — within the IPS §8 50% review trigger.")
+            flag("ok", f"Drawdown {lev['drawdown']:.1%} — within the IPS §8 50% review trigger.")
         cost_pct = lev["loc_rate"] * 100
         if not lev["yield_le_cost"]:
-            st.success(f"Portfolio yield ({yld_pct:.2f}%) exceeds LOC cost ({cost_pct:.2f}%).")
+            flag("ok", f"Portfolio yield ({yld_pct:.2f}%) exceeds LOC cost ({cost_pct:.2f}%).")
         elif p_sh is not None and b_sh is not None and p_sh > b_sh:
-            st.warning(f"Yield ({yld_pct:.2f}%) ≤ LOC cost ({cost_pct:.2f}%) — IPS §7 flag — but "
-                       f"portfolio Sharpe ({p_sh:.2f}) still exceeds the market ({b_sh:.2f}), so the "
-                       "§7 Sharpe override holds: leverage remains justified.")
+            flag("warn", f"Yield ({yld_pct:.2f}%) ≤ LOC cost ({cost_pct:.2f}%) — IPS §7 flag — but "
+                 f"portfolio Sharpe ({p_sh:.2f}) still exceeds the market ({b_sh:.2f}), so the "
+                 "§7 Sharpe override holds: leverage remains justified.")
         else:
-            st.error(f"Yield ({yld_pct:.2f}%) ≤ LOC cost ({cost_pct:.2f}%) and no Sharpe advantage "
-                     "— IPS §7/§8 suggest reassessing the leverage position.")
+            flag("bad", f"Yield ({yld_pct:.2f}%) ≤ LOC cost ({cost_pct:.2f}%) and no Sharpe "
+                 "advantage — IPS §7/§8 suggest reassessing the leverage position.")
         st.caption("Yield = MV-weighted trailing-12-month distribution yield of the ETFs. Sharpe = "
                    "annualized, monthly total returns over the FF risk-free (current holdings "
                    "backtested; OPO excluded). Leverage = gross exposure ÷ equity. Prime is an "

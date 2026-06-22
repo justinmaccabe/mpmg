@@ -147,7 +147,7 @@ def leverage_metrics(market_value, loc_balance, prime, spread, yld, peak):
     equity = market_value - loc_balance
     rate = (prime + spread) / 100.0          # decimal
     annual_interest = loc_balance * rate
-    drawdown = (peak - market_value) / peak if peak else 0.0
+    drawdown = max(0.0, (peak - market_value) / peak) if peak else 0.0
     return {
         "gross_exposure": market_value,
         "equity": equity,
