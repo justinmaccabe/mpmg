@@ -431,57 +431,61 @@ with tab_contrib:
         piv["Total"] = piv.sum(axis=1)
         st.dataframe(piv.style.format(fmt_money0), width="stretch")
 
-    st.subheader("Log a Contribution")
-    with st.form("contrib", clear_on_submit=True):
-        cc = st.columns([1, 1, 1, 2])
-        cdate = cc[0].date_input("Date", dt.date.today(), key="cdate")
-        cacct = cc[1].selectbox("Account", ["TFSA", "FHSA"], key="cacct")
-        camt = cc[2].number_input("Amount", min_value=0.0, step=100.0, format="%.2f")
-        cnote = cc[3].text_input("Note", "")
-        if st.form_submit_button("Add contribution"):
-            db.add_contribution(cdate, cacct, camt, cnote)
-            st.success(f"Added {cacct} contribution.")
-            st.rerun()
+    if GUEST:
+        st.caption("Guest view — adding and removing contributions is disabled.")
+    else:
+        st.subheader("Log a Contribution")
+        with st.form("contrib", clear_on_submit=True):
+            cc = st.columns([1, 1, 1, 2])
+            cdate = cc[0].date_input("Date", dt.date.today(), key="cdate")
+            cacct = cc[1].selectbox("Account", ["TFSA", "FHSA"], key="cacct")
+            camt = cc[2].number_input("Amount", min_value=0.0, step=100.0, format="%.2f")
+            cnote = cc[3].text_input("Note", "")
+            if st.form_submit_button("Add contribution"):
+                db.add_contribution(cdate, cacct, camt, cnote)
+                st.success(f"Added {cacct} contribution.")
+                st.rerun()
 
-    if not cdf.empty:
-        st.subheader("Remove a Contribution")
-        clabels = {
-            f"#{int(r.id)} · {r.date} · {r.account} · {money(r.amount)} · {r.note}":
-            int(r.id) for r in cdf.itertuples()
-        }
-        cpick = st.selectbox("Select a contribution", list(clabels))
-        if st.button("Delete selected contribution", type="primary"):
-            db.delete_contribution(clabels[cpick])
-            st.success("Deleted.")
-            st.rerun()
+        if not cdf.empty:
+            st.subheader("Remove a Contribution")
+            clabels = {
+                f"#{int(r.id)} · {r.date} · {r.account} · {money(r.amount)} · {r.note}":
+                int(r.id) for r in cdf.itertuples()
+            }
+            cpick = st.selectbox("Select a contribution", list(clabels))
+            if st.button("Delete selected contribution", type="primary"):
+                db.delete_contribution(clabels[cpick])
+                st.success("Deleted.")
+                st.rerun()
 
 # ----------------------------------------------------------------- Add trade
 with tab_trade:
-    st.subheader("Log a Transaction")
     inst = db.get_instruments_df()
-    with st.form("trade", clear_on_submit=True):
-        col = st.columns(3)
-        date = col[0].date_input("Date", dt.date.today())
-        ticker = col[1].selectbox("Ticker", inst["ticker"].tolist())
-        account = col[2].selectbox("Account", ["FHSA", "TFSA"])
-        col2 = st.columns(4)
-        action = col2[0].selectbox("Action", ["Buy", "Sell", "Dividend"])
-        shares = col2[1].number_input("Shares", min_value=0.0, step=1.0, format="%.4f")
-        price = col2[2].number_input("Price / share", min_value=0.0, step=0.01, format="%.4f")
-        fees = col2[3].number_input("Fees", min_value=0.0, step=0.01, format="%.2f")
-        if st.form_submit_button("Add transaction"):
-            db.add_transaction(date, ticker, account, action, shares, price, fees)
-            st.cache_data.clear()
-            st.success(f"Added {action} {shares} {ticker} ({account}).")
+    if not GUEST:
+        st.subheader("Log a Transaction")
+        with st.form("trade", clear_on_submit=True):
+            col = st.columns(3)
+            date = col[0].date_input("Date", dt.date.today())
+            ticker = col[1].selectbox("Ticker", inst["ticker"].tolist())
+            account = col[2].selectbox("Account", ["FHSA", "TFSA"])
+            col2 = st.columns(4)
+            action = col2[0].selectbox("Action", ["Buy", "Sell", "Dividend"])
+            shares = col2[1].number_input("Shares", min_value=0.0, step=1.0, format="%.4f")
+            price = col2[2].number_input("Price / share", min_value=0.0, step=0.01, format="%.4f")
+            fees = col2[3].number_input("Fees", min_value=0.0, step=0.01, format="%.2f")
+            if st.form_submit_button("Add transaction"):
+                db.add_transaction(date, ticker, account, action, shares, price, fees)
+                st.cache_data.clear()
+                st.success(f"Added {action} {shares} {ticker} ({account}).")
 
     st.subheader("Ledger")
     ledger = db.get_transactions_df()
     st.dataframe(ledger, width="stretch", hide_index=True)
 
-    st.subheader("Remove a Transaction")
-    if ledger.empty:
-        st.caption("No transactions to remove.")
-    else:
+    if GUEST:
+        st.caption("Guest view — adding and removing transactions is disabled.")
+    elif not ledger.empty:
+        st.subheader("Remove a Transaction")
         labels = {
             f"#{int(r.id)} · {r.date} · {r.action} {r.shares:g} {r.ticker} "
             f"({r.account}) @ ${r.price:g}": int(r.id)
