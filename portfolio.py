@@ -186,6 +186,66 @@ def _ff_csv(name, cols):
     return df.set_index("date") / 100.0
 
 
+def _trailing_yield(symbol):
+    """Trailing-12-month distribution yield = TTM distributions / last price."""
+    import yfinance as yf
+    try:
+        tk = yf.Ticker(symbol)
+        divs = tk.dividends
+        if divs is None or len(divs) == 0:
+            return None
+        cut = divs.index.max() - pd.Timedelta(days=365)
+        ttm = float(divs[divs.index > cut].sum())
+        hist = tk.history(period="5d")["Close"].dropna()
+        if not len(hist):
+            return None
+        return ttm / float(hist.iloc[-1])
+    except Exception:
+        return None
+
+
+def portfolio_dividend_yield(positions: pd.DataFrame, instruments: pd.DataFrame) -> float:
+    """MV-weighted trailing dividend yield across market holdings (decimal)."""
+    inst = instruments.set_index("ticker")
+    num = den = 0.0
+    for _, p in positions.iterrows():
+        t = p["Ticker"]
+        if t in inst.index and not inst.loc[t, "is_private"] and inst.loc[t, "yf_symbol"]:
+            y = _trailing_yield(inst.loc[t, "yf_symbol"])
+            if y is not None:
+                num += p["Market Value"] * y
+                den += p["Market Value"]
+    return num / den if den else 0.0
+
+
+def _ann_sharpe(monthly_ret, rf_monthly):
+    d = pd.concat([monthly_ret.rename("r"), rf_monthly.rename("rf")], axis=1).dropna()
+    if len(d) < 24:
+        return None
+    ex = d["r"] - d["rf"]
+    return float(ex.mean() / ex.std() * np.sqrt(12)) if ex.std() else None
+
+
+def sharpe_ratios(tx, instruments, period="3y") -> dict:
+    """Annualized Sharpe for the portfolio (current holdings backtested) vs the
+    benchmark, using monthly total returns and the Fama-French risk-free rate."""
+    rf = _get_ff_factors()["RF"]
+
+    def monthly(series):
+        m = series.resample("ME").last().pct_change().dropna()
+        m.index = m.index.to_period("M").to_timestamp("M")
+        return m
+
+    pv = portfolio_performance(tx, instruments, period)
+    bench = pricelib.get_history([BENCHMARK_SYMBOL], period=period)
+    bench = bench[BENCHMARK_SYMBOL] if BENCHMARK_SYMBOL in bench.columns else pd.Series(dtype=float)
+    return {
+        "portfolio": _ann_sharpe(monthly(pv), rf) if not pv.empty else None,
+        "benchmark": _ann_sharpe(monthly(bench), rf) if not bench.empty else None,
+        "benchmark_symbol": BENCHMARK_SYMBOL,
+    }
+
+
 def _get_ff_factors():
     """Developed Fama-French 5 factors + momentum (monthly, decimal, month-end index)."""
     f5 = _ff_csv("Developed_5_Factors", ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"])

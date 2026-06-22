@@ -97,6 +97,17 @@ def load_factors():
     return portfolio.factor_exposure(pos, db.get_instruments_df())
 
 
+@st.cache_data(ttl=86400)
+def load_yield():
+    pos, _ = load_portfolio()
+    return portfolio.portfolio_dividend_yield(pos, db.get_instruments_df())
+
+
+@st.cache_data(ttl=86400)
+def load_sharpe():
+    return portfolio.sharpe_ratios(db.get_transactions_df(), db.get_instruments_df())
+
+
 HIDE = False          # toggled below; when True, dollar amounts are masked
 MASK = "$ •••••"
 
@@ -576,28 +587,26 @@ with tab_lev:
         s = db.get_settings()
         if not GUEST:
             with st.form("loc"):
-                lc = st.columns(4)
+                lc = st.columns(3)
                 loc = lc[0].number_input("LOC balance ($)", value=float(s["loc_balance"]),
                                          min_value=0.0, step=500.0)
                 prime = lc[1].number_input("Prime rate (%)", value=float(s["prime_rate"]),
                                            min_value=0.0, step=0.05, format="%.2f")
                 spread = lc[2].number_input("Spread over prime (%)", value=float(s["loc_spread"]),
                                             min_value=0.0, step=0.05, format="%.2f")
-                yld = lc[3].number_input("Est. portfolio yield (%)",
-                                         value=float(s["portfolio_yield"]),
-                                         min_value=0.0, step=0.1, format="%.2f")
                 if st.form_submit_button("Save"):
                     db.set_settings({"loc_balance": loc, "prime_rate": prime,
-                                     "loc_spread": spread, "portfolio_yield": yld})
+                                     "loc_spread": spread})
                     st.cache_data.clear()
                     st.rerun()
         else:
-            loc, prime, spread, yld = (s["loc_balance"], s["prime_rate"],
-                                       s["loc_spread"], s["portfolio_yield"])
+            loc, prime, spread = s["loc_balance"], s["prime_rate"], s["loc_spread"]
 
+        yld_pct = load_yield() * 100.0           # weighted trailing ETF dividend yield
+        sh = load_sharpe()
         snaps = db.get_snapshots_df()
         peak = snaps["market_value"].max() if len(snaps) else totals["market_value"]
-        lev = portfolio.leverage_metrics(totals["market_value"], loc, prime, spread, yld, peak)
+        lev = portfolio.leverage_metrics(totals["market_value"], loc, prime, spread, yld_pct, peak)
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Leverage factor", f"{lev['leverage']:.2f}×")
@@ -608,24 +617,32 @@ with tab_lev:
         d1.metric("Annual interest", money(lev["annual_interest"]))
         d2.metric("Monthly interest", money(lev["monthly_interest"]))
         d3.metric("Drawdown from peak", f"{lev['drawdown']:.1%}")
+        e1, e2, e3 = st.columns(3)
+        e1.metric("Est. portfolio yield", f"{yld_pct:.2f}%")
+        p_sh, b_sh = sh.get("portfolio"), sh.get("benchmark")
+        e2.metric("Portfolio Sharpe", f"{p_sh:.2f}" if p_sh is not None else "—")
+        e3.metric(f"{sh.get('benchmark_symbol', 'Benchmark')} Sharpe",
+                  f"{b_sh:.2f}" if b_sh is not None else "—")
 
         st.markdown("##### IPS flags")
         if lev["drawdown_trigger"]:
             st.error("Drawdown ≥ 50% from peak — IPS §8 mandatory strategy review.")
         else:
             st.success(f"Drawdown {lev['drawdown']:.1%} — within the IPS §8 50% review trigger.")
-        if yld <= 0:
-            st.info("Set an estimated portfolio yield above to evaluate the IPS §7 yield-vs-cost flag.")
-        elif lev["yield_le_cost"]:
-            st.warning(f"Portfolio yield ({yld:.2f}%) ≤ LOC cost ({lev['loc_rate'] * 100:.2f}%) "
-                       "— IPS §7 flag. Not an automatic deleverage if expected Sharpe still "
-                       "beats the market (§7 Sharpe override).")
+        cost_pct = lev["loc_rate"] * 100
+        if not lev["yield_le_cost"]:
+            st.success(f"Portfolio yield ({yld_pct:.2f}%) exceeds LOC cost ({cost_pct:.2f}%).")
+        elif p_sh is not None and b_sh is not None and p_sh > b_sh:
+            st.warning(f"Yield ({yld_pct:.2f}%) ≤ LOC cost ({cost_pct:.2f}%) — IPS §7 flag — but "
+                       f"portfolio Sharpe ({p_sh:.2f}) still exceeds the market ({b_sh:.2f}), so the "
+                       "§7 Sharpe override holds: leverage remains justified.")
         else:
-            st.success(f"Portfolio yield ({yld:.2f}%) exceeds LOC cost "
-                       f"({lev['loc_rate'] * 100:.2f}%).")
-        st.caption("Leverage = gross exposure ÷ equity (equity = market value − LOC). Per IPS §7, "
-                   "target leverage ≈ reference-market vol ÷ unlevered-portfolio vol, and interest "
-                   "must stay serviceable from employment income. Prime is an input — keep it current.")
+            st.error(f"Yield ({yld_pct:.2f}%) ≤ LOC cost ({cost_pct:.2f}%) and no Sharpe advantage "
+                     "— IPS §7/§8 suggest reassessing the leverage position.")
+        st.caption("Yield = MV-weighted trailing-12-month distribution yield of the ETFs. Sharpe = "
+                   "annualized, monthly total returns over the FF risk-free (current holdings "
+                   "backtested; OPO excluded). Leverage = gross exposure ÷ equity. Prime is an "
+                   "input — keep it current per IPS §7.")
 
 # ----------------------------------------------------------------- Factor Exposure
 with tab_factor:
