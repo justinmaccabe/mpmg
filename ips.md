@@ -145,14 +145,3 @@ Factor exposure should be reported from day one using holdings-based decompositi
 | Extraordinary review | Required after major life changes, material financing changes, benchmark philosophy changes, or severe drawdowns. |
 | Change standard | Changes to policy beliefs, leverage rules, benchmarks, or permitted universe should be documented with rationale. |
 | Professional advice | This IPS is a personal governance document and should not be treated as legal, tax, or regulated investment advice. |
-
-## 13. Open Items for Next Session
-
-| Open Item | Decision Needed |
-| --- | --- |
-| ETF universe | Map ideal exposures to the best available ETFs before applying RBC commission-free constraints. |
-| Return assumptions | Build historical, Black-Litterman, and risk parity model inputs. |
-| Borrowing model | Calculate leverage target under multiple volatility and LOC-rate scenarios. |
-| Policy weights | Select strategic target weights after optimizer comparison and robustness review. |
-| Implementation map | Allocate policy weights across TFSA and FHSA, including USD/CAD handling and FX conversion method. |
-| Tracking system | Build performance, contribution, benchmark, factor exposure, and leverage monitoring dashboard. |
