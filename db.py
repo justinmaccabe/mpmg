@@ -52,7 +52,7 @@ TFSA_ANNUAL_LIMITS = {
 #   RBC TFSA: $6,500 (2025) + $3,000 (2026) · FHSA: $16,000 (2026)
 #   OPO (Optimize TFSA): $500/mo, assumed from Jan 2025 — adjust if different.
 SEED_CONTRIBUTIONS = [
-    (dt.date(2025, 12, 15), "TFSA", 6500.0, "RBC TFSA"),
+    (dt.date(2026, 1, 15), "TFSA", 6500.0, "RBC TFSA"),
     (dt.date(2026, 3, 1), "TFSA", 3000.0, "RBC TFSA"),
     (dt.date(2026, 2, 1), "FHSA", 16000.0, "FHSA lump"),
 ]
