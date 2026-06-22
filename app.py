@@ -131,6 +131,55 @@ def color_pnl(v):
     return "color:#9AA0AB"
 
 
+def opo_pending_month(contribs_df, today):
+    """Earliest month (from Jan 2025) whose OPO buy is due (≥15th) but unrecorded."""
+    recorded = set()
+    if contribs_df is not None and not contribs_df.empty:
+        opo = contribs_df[contribs_df["note"].astype(str).str.contains("OPO")]
+        for d in pd.to_datetime(opo["date"]):
+            recorded.add((d.year, d.month))
+    months, y, m = [], 2025, 1
+    while (y, m) < (today.year, today.month):
+        months.append((y, m))
+        m += 1
+        if m > 12:
+            m, y = 1, y + 1
+    if today.day >= 15:
+        months.append((today.year, today.month))
+    for ym in months:
+        if ym not in recorded:
+            return ym
+    return None
+
+
+@st.dialog("Record your OPO monthly buy")
+def opo_buy_dialog(ym):
+    label = dt.date(ym[0], ym[1], 1).strftime("%B %Y")
+    st.write(f"Your **OPO** contribution for **{label}** invested around the 15th. "
+             "Enter the actual fill so your units, ACB, and contribution room stay accurate.")
+    try:
+        default_price = float(db.get_instruments_df().set_index("ticker")
+                              .loc["OPO", "manual_price"] or 0)
+    except Exception:
+        default_price = 0.0
+    qty = st.number_input("Units bought", min_value=0.0, step=0.0001, format="%.4f")
+    price = st.number_input("Price per unit", min_value=0.0, value=default_price, format="%.4f")
+    amt = st.number_input("Cash contributed ($)", min_value=0.0, value=500.0,
+                          step=50.0, format="%.2f")
+    c1, c2 = st.columns(2)
+    if c1.button("Record buy", type="primary"):
+        d = dt.date(ym[0], ym[1], 15)
+        db.add_transaction(d, "OPO", "TFSA", "Buy", qty, price, 0.0)
+        db.add_contribution(d, "TFSA", amt, "OPO (Optimize TFSA) $500/mo")
+        if price > 0:
+            db.set_manual_price("OPO", price)   # keep the balance current too
+        st.cache_data.clear()
+        st.rerun()
+    if c2.button("Remind me later"):
+        st.session_state["opo_skip"] = True
+        st.rerun()
+
+
 def _secret(name, default=""):
     try:
         v = st.secrets.get(name, "")
@@ -176,6 +225,12 @@ with hc2:
     if GUEST:
         st.caption("Guest view — balances locked")
 st.markdown("<hr class='mpmg-rule'>", unsafe_allow_html=True)
+
+# Prompt for this month's OPO buy once it's due (skippable for the session)
+if not GUEST and not st.session_state.get("opo_skip"):
+    _opo_due = opo_pending_month(db.get_contributions_df(), dt.date.today())
+    if _opo_due:
+        opo_buy_dialog(_opo_due)
 
 (tab_overview, tab_accounts, tab_bench, tab_contrib,
  tab_trade, tab_corr) = st.tabs(
@@ -462,6 +517,13 @@ with tab_contrib:
 with tab_trade:
     inst = db.get_instruments_df()
     if not GUEST:
+        if st.button("➕ Record OPO monthly buy"):
+            today = dt.date.today()
+            ym = (opo_pending_month(db.get_contributions_df(), today)
+                  or (today.year, today.month))
+            st.session_state["opo_skip"] = False
+            opo_buy_dialog(ym)
+
         st.subheader("Log a Transaction")
         with st.form("trade", clear_on_submit=True):
             col = st.columns(3)
