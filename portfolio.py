@@ -139,6 +139,87 @@ def normalized_performance(symbols, period="1y") -> pd.DataFrame:
                       if c.dropna().size else c)
 
 
+FACTORS = ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "Mom"]
+
+
+def leverage_metrics(market_value, loc_balance, prime, spread, yld, peak):
+    """Leverage ratio, financing cost, and IPS flags from a single LOC balance."""
+    equity = market_value - loc_balance
+    rate = (prime + spread) / 100.0          # decimal
+    annual_interest = loc_balance * rate
+    drawdown = (peak - market_value) / peak if peak else 0.0
+    return {
+        "gross_exposure": market_value,
+        "equity": equity,
+        "leverage": market_value / equity if equity else float("nan"),
+        "loc_rate": rate,
+        "annual_interest": annual_interest,
+        "monthly_interest": annual_interest / 12.0,
+        "drawdown": drawdown,
+        "yield_le_cost": (yld / 100.0) <= rate,   # IPS §7 yield-vs-cost flag
+        "drawdown_trigger": drawdown >= 0.50,     # IPS §8 review trigger
+    }
+
+
+def _get_ff_factors():
+    """Developed Fama-French 5 factors + momentum (monthly, decimal)."""
+    import pandas_datareader.data as web
+    f5 = web.DataReader("Developed_5_Factors", "famafrench")[0] / 100.0
+    mom = web.DataReader("Developed_Mom_Factor", "famafrench")[0] / 100.0
+    ff = f5.join(mom).rename(columns={"WML": "Mom"})
+    ff.index = ff.index.to_timestamp("M")
+    return ff
+
+
+def _regress_fund(symbol, ff, period):
+    px = pricelib.get_history([symbol], period=period)
+    if px.empty or symbol not in px.columns:
+        return None
+    monthly = px[symbol].resample("ME").last().pct_change().dropna()
+    monthly.index = monthly.index.to_period("M").to_timestamp("M")
+    d = ff.copy()
+    d["ret"] = monthly
+    d = d.dropna()
+    if len(d) < 12:
+        return None
+    y = (d["ret"] - d["RF"]).values
+    X = np.column_stack([np.ones(len(d))] + [d[f].values for f in FACTORS])
+    beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+    resid = y - X @ beta
+    r2 = 1 - resid.var() / y.var() if y.var() else 0.0
+    return {"alpha": float(beta[0]),
+            "betas": {f: float(b) for f, b in zip(FACTORS, beta[1:])},
+            "r2": float(r2), "n": int(len(d))}
+
+
+def factor_exposure(positions: pd.DataFrame, instruments: pd.DataFrame, period="5y"):
+    """Returns-based Fama-French factor loadings per fund and for the portfolio.
+
+    Portfolio loadings are MV-weighted across market holdings; private holdings
+    (no return history) are reported as an unattributed weight.
+    """
+    inst = instruments.set_index("ticker")
+    ff = _get_ff_factors()
+    total_mv = positions["Market Value"].sum()
+    legs = []
+    for _, p in positions.iterrows():
+        t = p["Ticker"]
+        if t in inst.index and not inst.loc[t, "is_private"] and inst.loc[t, "yf_symbol"]:
+            legs.append((t, inst.loc[t, "yf_symbol"], float(p["Market Value"])))
+    attributed = sum(mv for _, _, mv in legs) or 1.0
+    per_fund = {}
+    for t, sym, mv in legs:
+        reg = _regress_fund(sym, ff, period)
+        if reg:
+            per_fund[t] = {"weight": mv / attributed, **reg}
+    portfolio = {f: sum(d["weight"] * d["betas"][f] for d in per_fund.values())
+                 for f in FACTORS}
+    return {"factors": FACTORS, "per_fund": per_fund, "portfolio": portfolio,
+            "unattributed": (total_mv - attributed) / total_mv if total_mv else 0.0,
+            "window": (ff.index.min().strftime("%b %Y"),
+                       ff.index.max().strftime("%b %Y"))}
+
+
 def tfsa_cumulative_room(year: int) -> float:
     """Total TFSA room accrued from the year you turned 18 through `year`."""
     start = db.USER_BIRTH_YEAR + 18

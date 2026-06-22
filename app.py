@@ -91,6 +91,12 @@ def perf_portfolio(period):
                                            db.get_instruments_df(), period)
 
 
+@st.cache_data(ttl=86400)
+def load_factors():
+    pos, _ = load_portfolio()
+    return portfolio.factor_exposure(pos, db.get_instruments_df())
+
+
 HIDE = False          # toggled below; when True, dollar amounts are masked
 MASK = "$ •••••"
 
@@ -232,10 +238,10 @@ if not GUEST and not st.session_state.get("opo_skip"):
     if _opo_due:
         opo_buy_dialog(_opo_due)
 
-(tab_overview, tab_accounts, tab_bench, tab_contrib,
- tab_trade, tab_corr, tab_ips) = st.tabs(
-    ["Overview", "Accounts", "Benchmarks", "Contributions",
-     "Add trade", "Correlations", "IPS"])
+(tab_overview, tab_accounts, tab_bench, tab_contrib, tab_trade, tab_corr,
+ tab_lev, tab_factor, tab_ips) = st.tabs(
+    ["Overview", "Accounts", "Benchmarks", "Contributions", "Add trade",
+     "Correlations", "Leverage", "Factor Exposure", "IPS"])
 
 # ----------------------------------------------------------------- Overview
 with tab_overview:
@@ -559,6 +565,107 @@ with tab_trade:
             st.cache_data.clear()
             st.success(f"Deleted transaction {pick.split(' · ')[0]}.")
             st.rerun()
+
+# ----------------------------------------------------------------- Leverage
+with tab_lev:
+    st.subheader("Leverage")
+    pos, totals = load_portfolio()
+    if not totals:
+        st.info("No positions yet.")
+    else:
+        s = db.get_settings()
+        if not GUEST:
+            with st.form("loc"):
+                lc = st.columns(4)
+                loc = lc[0].number_input("LOC balance ($)", value=float(s["loc_balance"]),
+                                         min_value=0.0, step=500.0)
+                prime = lc[1].number_input("Prime rate (%)", value=float(s["prime_rate"]),
+                                           min_value=0.0, step=0.05, format="%.2f")
+                spread = lc[2].number_input("Spread over prime (%)", value=float(s["loc_spread"]),
+                                            min_value=0.0, step=0.05, format="%.2f")
+                yld = lc[3].number_input("Est. portfolio yield (%)",
+                                         value=float(s["portfolio_yield"]),
+                                         min_value=0.0, step=0.1, format="%.2f")
+                if st.form_submit_button("Save"):
+                    db.set_settings({"loc_balance": loc, "prime_rate": prime,
+                                     "loc_spread": spread, "portfolio_yield": yld})
+                    st.cache_data.clear()
+                    st.rerun()
+        else:
+            loc, prime, spread, yld = (s["loc_balance"], s["prime_rate"],
+                                       s["loc_spread"], s["portfolio_yield"])
+
+        snaps = db.get_snapshots_df()
+        peak = snaps["market_value"].max() if len(snaps) else totals["market_value"]
+        lev = portfolio.leverage_metrics(totals["market_value"], loc, prime, spread, yld, peak)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Leverage factor", f"{lev['leverage']:.2f}×")
+        c2.metric("Equity", money(lev["equity"]))
+        c3.metric("Gross exposure", money(lev["gross_exposure"]))
+        c4.metric("LOC rate", f"{lev['loc_rate'] * 100:.2f}%")
+        d1, d2, d3 = st.columns(3)
+        d1.metric("Annual interest", money(lev["annual_interest"]))
+        d2.metric("Monthly interest", money(lev["monthly_interest"]))
+        d3.metric("Drawdown from peak", f"{lev['drawdown']:.1%}")
+
+        st.markdown("##### IPS flags")
+        if lev["drawdown_trigger"]:
+            st.error("Drawdown ≥ 50% from peak — IPS §8 mandatory strategy review.")
+        else:
+            st.success(f"Drawdown {lev['drawdown']:.1%} — within the IPS §8 50% review trigger.")
+        if yld <= 0:
+            st.info("Set an estimated portfolio yield above to evaluate the IPS §7 yield-vs-cost flag.")
+        elif lev["yield_le_cost"]:
+            st.warning(f"Portfolio yield ({yld:.2f}%) ≤ LOC cost ({lev['loc_rate'] * 100:.2f}%) "
+                       "— IPS §7 flag. Not an automatic deleverage if expected Sharpe still "
+                       "beats the market (§7 Sharpe override).")
+        else:
+            st.success(f"Portfolio yield ({yld:.2f}%) exceeds LOC cost "
+                       f"({lev['loc_rate'] * 100:.2f}%).")
+        st.caption("Leverage = gross exposure ÷ equity (equity = market value − LOC). Per IPS §7, "
+                   "target leverage ≈ reference-market vol ÷ unlevered-portfolio vol, and interest "
+                   "must stay serviceable from employment income. Prime is an input — keep it current.")
+
+# ----------------------------------------------------------------- Factor Exposure
+with tab_factor:
+    st.subheader("Factor Exposure")
+    st.caption("Returns-based Fama-French 5 + momentum loadings, MV-weighted across holdings.")
+    try:
+        fx = load_factors()
+    except Exception as e:
+        fx = None
+        st.warning(f"Couldn't load factor data (offline or source unavailable): {e}")
+    if fx:
+        port = fx["portfolio"]
+        vals = [port[f] for f in fx["factors"]]
+        fig = go.Figure(go.Bar(
+            x=fx["factors"], y=vals,
+            marker_color=[GOLD if v >= 0 else "#E0533D" for v in vals],
+            text=[f"{v:+.2f}" for v in vals], textposition="outside"))
+        fig = style_fig(fig, 420, legend=False)
+        fig.update_yaxes(title="Loading (β)")
+        show(fig)
+        if fx["unattributed"] > 0.001:
+            st.caption(f"Loadings cover the market-holding sleeve; {fx['unattributed']:.0%} of the "
+                       "portfolio (OPO, private) has no return history and is excluded.")
+
+        rows = []
+        for tk, d in fx["per_fund"].items():
+            row = {"Ticker": tk, "Weight": d["weight"], "R²": d["r2"],
+                   "Months": d["n"], "α (mo)": d["alpha"]}
+            row.update({f: d["betas"][f] for f in fx["factors"]})
+            rows.append(row)
+        fdf = pd.DataFrame(rows)
+        st.dataframe(fdf.style.format(
+            {"Weight": "{:.0%}", "R²": "{:.2f}", "α (mo)": "{:+.2%}",
+             **{f: "{:+.2f}" for f in fx["factors"]}}),
+            width="stretch", hide_index=True)
+        st.caption(f"Factor window {fx['window'][0]}–{fx['window'][1]} (Developed factors, monthly). "
+                   "CAD-listed funds show market β below 1.0 partly from CAD-vs-USD drift against the "
+                   "USD factor set; AVGE (USD) carries the value (HML)/profitability tilts of its "
+                   "Avantis design; ZMMK (cash) reads ~0. Funds under ~2 years old have noisier "
+                   "estimates. Updated daily.")
 
 # ----------------------------------------------------------------- IPS
 with tab_ips:

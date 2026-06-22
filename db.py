@@ -111,6 +111,21 @@ snapshots = Table(
     Column("benchmark_pct", Float),
 )
 
+settings = Table(
+    "settings", metadata,
+    Column("key", String, primary_key=True),
+    Column("value", Float),
+)
+
+# Leverage defaults — all editable in-app. Prime is a starting value: update it
+# to the current Canadian prime (the IPS forbids relying on a stale rate).
+SEED_SETTINGS = {
+    "loc_balance": 10000.0,
+    "prime_rate": 4.95,        # % — Canadian prime; set to current in-app
+    "loc_spread": 0.50,        # % over prime (per IPS: prime + 0.50%)
+    "portfolio_yield": 0.0,    # % — estimated trailing yield, for the IPS cost flag
+}
+
 contributions = Table(
     "contributions", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
@@ -156,6 +171,9 @@ def init_db(seed: bool = True):
             ])
         if conn.execute(select(func.count()).select_from(contributions)).scalar() == 0:
             conn.execute(contributions.insert(), _seed_contribution_rows())
+        if conn.execute(select(func.count()).select_from(settings)).scalar() == 0:
+            conn.execute(settings.insert(), [
+                dict(key=k, value=v) for k, v in SEED_SETTINGS.items()])
 
 
 # ---- read helpers -------------------------------------------------
@@ -198,6 +216,18 @@ def add_contribution(date, account, amount, note=""):
 def delete_contribution(cid: int):
     with engine.begin() as conn:
         conn.execute(contributions.delete().where(contributions.c.id == int(cid)))
+
+
+def get_settings() -> dict:
+    df = pd.read_sql(select(settings), engine)
+    return dict(zip(df["key"], df["value"])) if not df.empty else dict(SEED_SETTINGS)
+
+
+def set_settings(values: dict):
+    with engine.begin() as conn:
+        for k, v in values.items():
+            conn.execute(settings.delete().where(settings.c.key == k))
+            conn.execute(settings.insert().values(key=k, value=float(v)))
 
 
 def set_manual_price(ticker, price):
