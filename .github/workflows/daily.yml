@@ -2,8 +2,9 @@ name: Daily portfolio snapshot
 
 on:
   schedule:
-    # 21:05 UTC on weekdays — just after the TSX close (16:00 ET) year-round.
-    - cron: "5 21 * * 1-5"
+    # Weekdays. Times are UTC; ET shifts ~1h with daylight saving.
+    - cron: "5 14 * * 1-5"    # ~10am ET — intraday "open" snapshot
+    - cron: "5 21 * * 1-5"    # ~5pm ET — overwrites the day's row with the close
   workflow_dispatch:        # lets you trigger it by hand from the Actions tab
 
 jobs:

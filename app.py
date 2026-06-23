@@ -325,9 +325,7 @@ with tab_overview:
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=snaps["date"], y=snaps["market_value"],
                           mode="lines+markers", name="Market Value",
-                          line=dict(color="#4C9AFF", width=2),
-                          marker=dict(size=8),
-                          fill="tozeroy", fillcolor="rgba(76,154,255,.08)"))
+                          line=dict(color="#4C9AFF", width=2), marker=dict(size=8)))
             if snaps["book_value"].notna().any():
                 fig.add_trace(go.Scatter(x=snaps["date"], y=snaps["book_value"],
                               mode="lines+markers", name="Book Value",
@@ -335,17 +333,23 @@ with tab_overview:
                               marker=dict(size=7)))
             fig = style_fig(fig, 360)
             fig.update_yaxes(title="CAD", tickformat="$,.0f")
-            if HIDE:
-                fig.update_yaxes(showticklabels=False, title=None)
             fig.update_xaxes(type="date", tickformat="%b %d, %Y")
-            if len(snaps) == 1:           # avoid a degenerate sub-second axis
+            # zoom y to the data so daily moves are visible (not anchored at $0)
+            yvals = pd.concat([snaps["market_value"], snaps["book_value"]]).dropna()
+            if len(yvals):
+                lo, hi = float(yvals.min()), float(yvals.max())
+                pad = (hi - lo) * 0.25 if hi > lo else max(hi * 0.02, 1.0)
+                fig.update_yaxes(range=[lo - pad, hi + pad])
+            if len(snaps) == 1:           # give a lone point some horizontal room
                 d = snaps["date"].iloc[0]
                 fig.update_xaxes(range=[d - pd.Timedelta(days=4),
                                         d + pd.Timedelta(days=4)])
-                fig.update_yaxes(range=[0, snaps["market_value"].iloc[0] * 1.15])
+            if HIDE:
+                fig.update_yaxes(showticklabels=False, title=None)
             show(fig)
-            st.caption("Recorded automatically each weekday by the snapshot job — "
-                       "the line fills in as history builds.")
+            st.caption("Recorded each weekday — a mid-morning snapshot, finalized at "
+                       "the close. The y-axis zooms to the data, so the gap between the "
+                       "lines is your unrealized gain.")
         else:
             st.info("No snapshots yet — they appear once the daily job runs.")
     with c2:
