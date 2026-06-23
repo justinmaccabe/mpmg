@@ -76,13 +76,13 @@ Policy weights will be informed by three complementary approaches. No single opt
 
 ## 7. Leverage Policy
 
-Leverage may be introduced through a personal line of credit with an expected rate defined as prevailing Canadian prime plus 0.50%. The use of leverage is justified only if it improves the expected long-term wealth outcome after financing costs and remains serviceable from employment income without requiring forced asset sales during market stress.
+Leverage is employed through a personal line of credit at an expected rate of prevailing Canadian prime plus 0.50%. Its use is justified only while it improves the expected long-term wealth outcome after financing costs and remains serviceable from employment income without requiring forced asset sales during market stress.
 
 The target leverage framework is to lever the diversified portfolio toward market-like volatility rather than to maximize nominal exposure. If the unlevered optimized portfolio volatility is lower than the reference market volatility, the target leverage factor may be approximated as: target leverage factor = reference market volatility / unlevered portfolio volatility. The resulting borrowing amount must also satisfy serviceability, behavioral, and drawdown constraints.
 
 | Leverage Control | Policy |
 | --- | --- |
-| Financing cost | Use the actual LOC rate: Canadian prime + 0.50%. Do not hardcode a stale prime rate in the policy model. |
+| Financing cost | Canadian prime + 0.50%, evaluated at the prevailing prime rate and updated as prime changes. |
 | Target risk | Leverage is intended to restore total volatility toward market-like risk, not to create materially above-market volatility. |
 | Serviceability | Interest payments must be comfortably serviceable from employment income under adverse market conditions. |
 | Yield and cost flag | If the estimated yield on the underlying portfolio is at or below the financing cost, the leverage position must be flagged for review. |
@@ -94,7 +94,7 @@ The target leverage framework is to lever the diversified portfolio toward marke
 
 | Trigger | Required Response |
 | --- | --- |
-| Portfolio drawdown reaches 50% from peak | Mandatory strategy review. This is not an automatic sell rule; it is a governance checkpoint. |
+| Portfolio drawdown reaches 50% from peak | Mandatory strategy review — a governance checkpoint, not an automatic sell rule. Drawdown is measured from the peak of the recorded performance history. |
 | LOC cost rises materially | Review leverage economics, financing alternatives, portfolio yield, expected excess return, and cash-flow coverage. |
 | Underlying portfolio yield <= LOC cost | Flag for review and document whether expected Sharpe advantage remains intact. |
 | Expected Sharpe advantage disappears | Reassess factor tilts, leverage, and benchmark alternatives before adding new leverage. |
@@ -126,7 +126,7 @@ The portfolio will be reviewed and rebalanced on a fixed schedule, with the exac
 
 ## 11. Factor Exposure Reporting
 
-Factor exposure should be reported from day one using holdings-based decomposition where possible. This may include weighted average market capitalization, valuation ratios, profitability, investment characteristics, momentum score, volatility, regional allocation, sector allocation, currency exposure, and emerging market exposure. Regression-based attribution using a Fama-French-style model plus momentum may be added after sufficient live return history is available.
+Factor exposure is reported using returns-based attribution — a Fama-French five-factor model plus momentum — estimated from each holding's return history and aggregated to the portfolio. Holdings-based decomposition (weighted average market capitalization, valuation ratios, profitability, investment characteristics, momentum score, volatility, regional allocation, sector allocation, currency exposure, and emerging market exposure) may be added later as a complementary look-through view.
 
 | Exposure | Reporting Intent |
 | --- | --- |
