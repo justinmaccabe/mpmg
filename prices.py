@@ -1,20 +1,35 @@
 """Market data via yfinance. All functions degrade gracefully if offline."""
+import time
+
 import pandas as pd
 import yfinance as yf
 
 
-def get_history(symbols, period="1y") -> pd.DataFrame:
-    """Daily close prices for a list of yfinance symbols. Columns = symbols."""
+def get_history(symbols, period="1y", retries=2) -> pd.DataFrame:
+    """Daily close prices for a list of yfinance symbols. Columns = symbols.
+
+    Retries transient failures (common on a cold container / first load) and
+    returns an empty frame rather than raising, so callers never crash.
+    """
     symbols = [s for s in symbols if s]
     if not symbols:
         return pd.DataFrame()
-    data = yf.download(symbols, period=period, auto_adjust=True,
-                       progress=False, group_by="column")
-    if isinstance(data.columns, pd.MultiIndex):
-        close = data["Close"]
-    else:  # single symbol -> flat columns
-        close = data[["Close"]].rename(columns={"Close": symbols[0]})
-    return close.dropna(how="all")
+    for attempt in range(retries + 1):
+        try:
+            data = yf.download(symbols, period=period, auto_adjust=True,
+                               progress=False, group_by="column")
+            if data is None or data.empty:
+                raise ValueError("empty response")
+            if isinstance(data.columns, pd.MultiIndex):
+                close = data["Close"]
+            else:  # single symbol -> flat columns
+                close = data[["Close"]].rename(columns={"Close": symbols[0]})
+            return close.dropna(how="all")
+        except Exception:
+            if attempt < retries:
+                time.sleep(1.5)
+            else:
+                return pd.DataFrame()
 
 
 def get_current_and_prev(symbols) -> pd.DataFrame:

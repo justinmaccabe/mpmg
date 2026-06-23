@@ -229,7 +229,10 @@ def _ann_sharpe(monthly_ret, rf_monthly):
 def sharpe_ratios(tx, instruments, period="3y") -> dict:
     """Annualized Sharpe for the portfolio (current holdings backtested) vs the
     benchmark, using monthly total returns and the Fama-French risk-free rate."""
-    rf = _get_ff_factors()["RF"]
+    try:
+        rf = _get_ff_factors()["RF"]
+    except Exception:
+        return {"portfolio": None, "benchmark": None, "benchmark_symbol": BENCHMARK_SYMBOL}
 
     def monthly(series):
         m = series.resample("ME").last().pct_change().dropna()
