@@ -8,7 +8,7 @@ This Investment Policy Statement establishes the governing framework for a lifel
 
 The policy separates investment philosophy from implementation mechanics. The desired portfolio will be derived from theory, expected risk premia, diversification, and mean-variance analysis before considering trading commissions, broker availability, ETF shelf constraints, or foreign exchange execution. Implementation costs remain important, but they are execution constraints rather than the source of the investment mandate.
 
-**Scope of this policy.** A meaningful allocation is held through an externally-managed, cost-advantaged program accessed via the investor's employment, maintained as a long-term delegated core for manager diversification, access to pension-style (private) assets, and automated savings discipline. The philosophy, optimization, factor, leverage, and rebalancing provisions below govern the self-directed portfolio; this delegated allocation is treated as an exogenous core, reviewed annually, and liquidated if preferential access ends (e.g., a change of employment).
+A meaningful allocation is held through an externally-managed, cost-advantaged program accessed via the investor's employment, maintained as a long-term delegated core for manager diversification, access to pension-style (private) assets, and automated savings discipline. The philosophy, optimization, factor, leverage, and rebalancing provisions below govern the self-directed portfolio; this delegated allocation is treated as an exogenous core, reviewed annually, and liquidated if preferential access ends (e.g., a change of employment).
 
 ## 2. Investor Profile
 
@@ -17,7 +17,7 @@ The policy separates investment philosophy from implementation mechanics. The de
 | Investor | Justin Maccabe |
 | Life stage | Early career, with a 30+ year investment horizon. |
 | Primary accounts | TFSA and FHSA treated as one integrated portfolio for policy and optimization purposes. |
-| FHSA intent | Managed as long-term investment capital rather than as a near-term home-purchase reserve. |
+| FHSA intent | Managed as long-term investment capital rather than as a near-term home-purchase reserve. The investor accepts the 15-year FHSA maturity constraint — the account must fund a qualifying home purchase or be transferred to an RRSP before it lapses — and forgoes the home-purchase optionality as a deliberate trade-off. |
 | Other financial assets | No other meaningful financial assets currently identified. |
 | Human capital | Employment income is sufficient to service planned LOC interest payments regardless of market conditions. |
 | Knowledge base | Investor has formal finance training and is comfortable with mean-variance optimization, factor investing, leverage analysis, and mathematical finance concepts. |
