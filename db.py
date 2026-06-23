@@ -4,6 +4,7 @@ Both the Streamlit app and the daily GitHub Action import from here, so it is th
 single source of truth for the schema and seed data.
 """
 import os
+import time
 import datetime as dt
 
 import pandas as pd
@@ -11,6 +12,7 @@ from sqlalchemy import (
     create_engine, MetaData, Table, Column, Integer, String, Float, Date,
     Boolean, select, func,
 )
+from sqlalchemy.exc import OperationalError
 
 # Seed: your current holdings, lifted from the original spreadsheet.
 SEED_INSTRUMENTS = [
@@ -151,7 +153,18 @@ def _seed_contribution_rows():
 
 
 def init_db(seed: bool = True):
-    """Create tables if missing and load seed data on first run."""
+    """Create tables / seed, retrying so a cold (sleeping) database wakes
+    instead of crashing the app on the first query."""
+    for attempt in range(3):
+        try:
+            return _init_db(seed)
+        except OperationalError:
+            if attempt == 2:
+                raise
+            time.sleep(2)
+
+
+def _init_db(seed: bool = True):
     metadata.create_all(engine)
     if not seed:
         return
