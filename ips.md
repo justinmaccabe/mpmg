@@ -8,6 +8,8 @@ This Investment Policy Statement establishes the governing framework for a lifel
 
 The policy separates investment philosophy from implementation mechanics. The desired portfolio will be derived from theory, expected risk premia, diversification, and mean-variance analysis before considering trading commissions, broker availability, ETF shelf constraints, or foreign exchange execution. Implementation costs remain important, but they are execution constraints rather than the source of the investment mandate.
 
+**Scope of this policy.** A meaningful allocation is held through an externally-managed, cost-advantaged program accessed via the investor's employment, maintained as a long-term delegated core for manager diversification, access to pension-style (private) assets, and automated savings discipline. The philosophy, optimization, factor, leverage, and rebalancing provisions below govern the self-directed portfolio; this delegated allocation is treated as an exogenous core, reviewed annually, and liquidated if preferential access ends (e.g., a change of employment).
+
 ## 2. Investor Profile
 
 | Policy Area | Current Decision |
