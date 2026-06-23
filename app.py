@@ -72,8 +72,18 @@ def load_portfolio():
     return portfolio.build_portfolio(db.get_transactions_df(), db.get_instruments_df())
 
 
+def holdings_sig():
+    """A signature of current holdings, used as a cache key so holdings-dependent
+    views recompute when positions change (instead of waiting out a long TTL)."""
+    pos, _ = load_portfolio()
+    if pos.empty:
+        return ()
+    return tuple(sorted((str(r["Ticker"]), round(float(r["Shares"]), 4))
+                        for _, r in pos.iterrows()))
+
+
 @st.cache_data(ttl=3600)
-def load_corr():
+def load_corr(sig):
     pos, _ = load_portfolio()
     held = set(pos[pos["Shares"] > 0]["Ticker"]) if not pos.empty else set()
     inst = db.get_instruments_df()
@@ -95,19 +105,19 @@ def perf_portfolio(period):
 
 
 @st.cache_data(ttl=86400)
-def load_factors():
+def load_factors(sig):
     pos, _ = load_portfolio()
     return portfolio.factor_exposure(pos, db.get_instruments_df())
 
 
 @st.cache_data(ttl=86400)
-def load_yield():
+def load_yield(sig):
     pos, _ = load_portfolio()
     return portfolio.portfolio_dividend_yield(pos, db.get_instruments_df())
 
 
 @st.cache_data(ttl=86400)
-def load_sharpe():
+def load_sharpe(sig):
     return portfolio.sharpe_ratios(db.get_transactions_df(), db.get_instruments_df())
 
 
@@ -620,8 +630,9 @@ with tab_lev:
         else:
             loc, prime, spread = s["loc_balance"], s["prime_rate"], s["loc_spread"]
 
-        yld_pct = load_yield() * 100.0           # weighted trailing ETF dividend yield
-        sh = load_sharpe()
+        sig = holdings_sig()
+        yld_pct = load_yield(sig) * 100.0        # weighted trailing ETF dividend yield
+        sh = load_sharpe(sig)
         snaps = db.get_snapshots_df()
         peak = snaps["market_value"].max() if len(snaps) else totals["market_value"]
         lev = portfolio.leverage_metrics(totals["market_value"], loc, prime, spread, yld_pct, peak)
@@ -667,7 +678,7 @@ with tab_factor:
     st.subheader("Factor Exposure")
     st.caption("Returns-based Fama-French 5 + momentum loadings, MV-weighted across holdings.")
     try:
-        fx = load_factors()
+        fx = load_factors(holdings_sig())
     except Exception as e:
         fx = None
         st.warning(f"Couldn't load factor data (offline or source unavailable): {e}")
@@ -714,7 +725,7 @@ with tab_ips:
 # ----------------------------------------------------------------- Correlations
 with tab_corr:
     st.subheader("Correlation of Daily Returns (~1Y)")
-    corr = load_corr()
+    corr = load_corr(holdings_sig())
     if corr.empty:
         st.warning("Couldn't load price history (offline?). Try again shortly.")
     else:
