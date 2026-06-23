@@ -74,7 +74,10 @@ def load_portfolio():
 
 @st.cache_data(ttl=3600)
 def load_corr():
-    return portfolio.correlation_matrix(db.get_instruments_df())
+    pos, _ = load_portfolio()
+    held = set(pos[pos["Shares"] > 0]["Ticker"]) if not pos.empty else set()
+    inst = db.get_instruments_df()
+    return portfolio.correlation_matrix(inst[inst["ticker"].isin(held)])
 
 
 @st.cache_data(ttl=3600)

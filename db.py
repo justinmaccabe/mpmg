@@ -24,7 +24,6 @@ SEED_INSTRUMENTS = [
 
 SEED_TRANSACTIONS = [
     # date, ticker, account, action, shares, price, fees
-    ("ZMMK", "FHSA", "Buy", 82,                49.84),
     ("XEQT", "FHSA", "Buy", 212,               45.093),
     ("XEQT", "TFSA", "Buy", 88,                44.4813),
     ("XUS",  "FHSA", "Buy", 97,                65.1263),
