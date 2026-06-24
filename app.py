@@ -357,33 +357,41 @@ def render_overview():
         snaps = db.get_snapshots_df()
         if len(snaps):
             snaps = snaps.assign(date=pd.to_datetime(snaps["date"]))
+            freq = st.segmented_control(
+                "Frequency", ["Daily", "Weekly", "Monthly"], default="Daily",
+                label_visibility="collapsed", key="perf_freq") or "Daily"
+            rule = {"Weekly": "W", "Monthly": "ME"}.get(freq)
+            s = snaps.set_index("date")
+            if rule:
+                s = s.resample(rule).last().dropna(how="all")
+            s = s.reset_index()
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=snaps["date"], y=snaps["market_value"],
+            fig.add_trace(go.Scatter(x=s["date"], y=s["market_value"],
                           mode="lines+markers", name="Market Value",
                           line=dict(color=BLUE, width=2), marker=dict(size=8)))
-            if snaps["book_value"].notna().any():
-                fig.add_trace(go.Scatter(x=snaps["date"], y=snaps["book_value"],
+            if s["book_value"].notna().any():
+                fig.add_trace(go.Scatter(x=s["date"], y=s["book_value"],
                               mode="lines+markers", name="Book Value",
                               line=dict(color=GOLD, width=1.5, dash="dot"),
                               marker=dict(size=7)))
-            fig = style_fig(fig, 360)
+            fig = style_fig(fig, 340)
             fig.update_yaxes(title="CAD", tickformat="$,.0f")
             fig.update_xaxes(type="date", tickformat="%b %d, %Y")
-            yvals = pd.concat([snaps["market_value"], snaps["book_value"]]).dropna()
+            yvals = pd.concat([s["market_value"], s["book_value"]]).dropna()
             if len(yvals):
                 lo, hi = float(yvals.min()), float(yvals.max())
                 pad = (hi - lo) * 0.25 if hi > lo else max(hi * 0.02, 1.0)
                 fig.update_yaxes(range=[lo - pad, hi + pad])
-            if len(snaps) == 1:
-                d = snaps["date"].iloc[0]
+            if len(s) == 1:
+                d = s["date"].iloc[0]
                 fig.update_xaxes(range=[d - pd.Timedelta(days=4),
                                         d + pd.Timedelta(days=4)])
             if HIDE:
                 fig.update_yaxes(showticklabels=False, title=None)
             show(fig)
-            st.caption("Recorded each weekday — a mid-morning snapshot, finalized at "
-                       "the close. The y-axis zooms to the data, so the gap between the "
-                       "lines is your unrealized gain.")
+            st.caption("Daily / Weekly / Monthly resampling of the recorded snapshots "
+                       "(period-end value). The weekly and monthly views fill in as "
+                       "history accumulates.")
         else:
             st.info("No snapshots yet — they appear once the daily job runs.")
     with c2:
