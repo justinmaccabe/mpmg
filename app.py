@@ -291,8 +291,8 @@ def require_passcode():
         " display:inline-flex; flex-direction:column; align-items:center;"
         " justify-content:center; line-height:1;'>"
         f"<span style='font-family:{SERIF}; font-style:italic; font-size:2.6rem; color:{GOLD};'>M</span>"
-        f"<span style='font-family:{SERIF}; font-size:.5rem; letter-spacing:.22em;"
-        " color:#FFFFFF; margin-top:3px;'>WEALTH</span></div>"
+        f"<span style='font-family:{SERIF}; font-style:italic; font-size:.52rem;"
+        " letter-spacing:.14em; color:#FFFFFF; margin-top:2px;'>WEALTH</span></div>"
         f"<div style='font-family:{SERIF}; font-size:2rem; color:#F4F4F4; margin-top:.9rem;'>"
         f"Maccabe Portfolio Management <span style='color:{GOLD};'>Group</span></div>"
         f"<div style='color:{GOLD}; letter-spacing:.4em; text-transform:uppercase;"
@@ -332,16 +332,14 @@ def render_overview():
             metric = "Gain/Loss %" if HIDE else "Gain/Loss $"
             st.subheader("Gain / Loss by Holding" + (" (%)" if HIDE else ""))
             g = pos.sort_values(metric)
-            txt = ([f"{v:.2%}" for v in g[metric]] if HIDE
-                   else [money(v) for v in g[metric]])
+            htmpl = ("%{y}: %{x:.2%}<extra></extra>" if HIDE
+                     else "%{y}: $%{x:,.2f}<extra></extra>")
             fig = go.Figure(go.Bar(
                 x=g[metric], y=g["Ticker"], orientation="h",
                 marker_color=[NEG if v < 0 else POS for v in g[metric]],
-                text=txt, textposition="outside", cliponaxis=False))
+                hovertemplate=htmpl))
             fig = style_fig(fig, 360, legend=False)
-            fig.update_layout(margin=dict(l=10, r=70, t=20, b=10), uniformtext_minsize=1)
-            if HIDE:
-                fig.update_xaxes(tickformat=".0%")
+            fig.update_xaxes(tickformat=".0%" if HIDE else "$,.0f")
             show(fig)
 
         st.subheader("Holdings")
