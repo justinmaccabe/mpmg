@@ -281,12 +281,11 @@ def require_passcode():
     if not code or st.session_state.get("authed"):
         return
     st.markdown(
-        "<div style='text-align:center; margin-top:7vh;'>"
-        f"<div class='mpmg-mark' style='margin:0 auto .9rem;'>M</div>"
-        "<div style='font-family:" + SERIF + "; font-size:2rem; color:#F4F4F4;'>"
-        "Maccabe Portfolio Management <span style='color:" + GOLD + ";'>Group</span></div>"
-        "<div style='color:" + GOLD + "; letter-spacing:.4em; text-transform:uppercase;"
-        " font-size:.7rem; margin-top:.5rem;'>Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>"
+        "<div style='text-align:center; margin-top:8vh; line-height:1;'>"
+        f"<span style='font-family:{SERIF}; font-style:italic; font-size:3.6rem; color:{GOLD};'>M</span>"
+        f"<span style='font-family:{SERIF}; font-size:1.05rem; color:#FFFFFF; letter-spacing:.04em;'>wealth</span>"
+        f"<div style='color:{GOLD}; letter-spacing:.4em; text-transform:uppercase;"
+        " font-size:.7rem; margin-top:.8rem;'>Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>"
         "</div>", unsafe_allow_html=True)
     c = st.columns([1, 1, 1])
     with c[1]:
@@ -327,8 +326,9 @@ def render_overview():
             fig = go.Figure(go.Bar(
                 x=g[metric], y=g["Ticker"], orientation="h",
                 marker_color=[NEG if v < 0 else POS for v in g[metric]],
-                text=txt, textposition="auto"))
+                text=txt, textposition="outside", cliponaxis=False))
             fig = style_fig(fig, 360, legend=False)
+            fig.update_layout(margin=dict(l=10, r=70, t=20, b=10), uniformtext_minsize=1)
             if HIDE:
                 fig.update_xaxes(tickformat=".0%")
             show(fig)
