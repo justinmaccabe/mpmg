@@ -358,6 +358,57 @@ def look_through(positions: pd.DataFrame, instruments: pd.DataFrame) -> dict:
     return {"blocks": blocks, "region": region, "style": style}
 
 
+def current_block_weights(positions, instruments) -> dict:
+    """Current look-through weights mapped onto the Avantis-sleeve basis.
+    Regional market buckets map to the matching Avantis market sleeve; Canada
+    (no Avantis sleeve) is kept separate as unclassified home-market exposure."""
+    lt = look_through(positions, instruments)["blocks"]
+    mapping = {"US Market": "AVUS", "Intl Dev Market": "AVDE", "EM Market": "AVEM"}
+    out = {}
+    for b, w in lt.items():
+        out[mapping.get(b, b)] = out.get(mapping.get(b, b), 0.0) + w
+    return out
+
+
+def optimize_blocks(period="5y") -> dict:
+    """Risk-based target weights over AVGE's 10 Avantis sleeves.
+
+    Returns equal-weight, inverse-volatility (risk-parity proxy), and long-only
+    minimum-variance allocations. Robust to differing fund inception dates:
+    per-asset vol uses each fund's full history; covariance uses the common window.
+    """
+    syms = list(AVGE_HOLDINGS.keys())
+    hist = pricelib.get_history(syms, period=period)
+    if hist.empty:
+        return {}
+    monthly = hist.resample("ME").last().pct_change()
+    assets = [s for s in syms if s in monthly.columns and monthly[s].notna().sum() >= 12]
+    if len(assets) < 2:
+        return {}
+    monthly = monthly[assets]
+    vol = monthly.std()                                  # per-asset, own history
+    common = monthly.dropna()                            # aligned window for covariance
+    n = len(assets)
+    ew = pd.Series(1.0 / n, index=assets)
+    iv = (1.0 / vol)
+    iv = iv / iv.sum()
+    if len(common) >= n + 2:
+        cov = common.cov().values
+        cov = 0.85 * cov + 0.15 * np.diag(np.diag(cov))   # light shrinkage to diagonal
+        try:
+            w = np.linalg.pinv(cov) @ np.ones(n)
+            w = np.clip(w, 0, None)
+            mv = pd.Series(w / w.sum() if w.sum() > 0 else ew.values, index=assets)
+        except Exception:
+            mv = ew
+        cov_months = len(common)
+    else:
+        mv = iv                                           # not enough overlap for cov
+        cov_months = len(common)
+    return {"assets": assets, "equal": ew, "invvol": iv, "minvar": mv,
+            "vol": vol, "cov_months": int(cov_months)}
+
+
 def tfsa_cumulative_room(year: int) -> float:
     """Total TFSA room accrued from the year you turned 18 through `year`."""
     start = db.USER_BIRTH_YEAR + 18

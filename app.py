@@ -129,6 +129,11 @@ def load_sharpe(sig):
     return portfolio.sharpe_ratios(db.get_transactions_df(), db.get_instruments_df())
 
 
+@st.cache_data(ttl=86400)
+def load_optim(period):
+    return portfolio.optimize_blocks(period)
+
+
 HIDE = False          # set in the main flow; when True, dollar amounts are masked
 GUEST = False
 MASK = "$ •••••"
@@ -679,9 +684,59 @@ def render_lookthrough():
                         for b, w in sorted(lt["blocks"].items(), key=lambda x: -x[1])])
     st.dataframe(bdf.style.format({"Weight": "{:.1%}"}), width="stretch", hide_index=True)
     st.caption("AVGE decomposed into its 10 Avantis sleeves (renormalized to 100%); XEQT "
-               "into iShares regional weights (approx.); XUS as US large-cap. This is the "
-               "candidate universe for the §6 optimization — Phase 2 finds target weights "
-               "and the gaps from here.")
+               "into iShares regional weights (approx.); XUS as US large-cap.")
+
+    # ---- Phase 2: optimized target & gaps -------------------------------
+    st.divider()
+    st.subheader("Optimized Target & Gaps (§6)")
+    method = st.segmented_control(
+        "Method", ["Min-Variance", "Risk Parity (inv-vol)", "Equal Weight"],
+        default="Min-Variance", label_visibility="collapsed", key="opt_method") \
+        or "Min-Variance"
+    o = load_optim("5y")
+    if not o:
+        st.warning("Couldn't load optimizer data (offline?). Try again shortly.")
+        return
+    key = {"Min-Variance": "minvar", "Risk Parity (inv-vol)": "invvol",
+           "Equal Weight": "equal"}[method]
+    target = o[key]
+
+    cur = portfolio.current_block_weights(pos, db.get_instruments_df())
+    canada = cur.pop("Canada Market", 0.0)
+    cur_s = pd.Series({a: cur.get(a, 0.0) for a in o["assets"]}, dtype=float)
+    if cur_s.sum() > 0:
+        cur_s = cur_s / cur_s.sum()
+    comp = pd.DataFrame({"Current": cur_s, "Target": target}).fillna(0.0)
+    comp["Gap"] = comp["Target"] - comp["Current"]
+    comp = comp.sort_values("Target", ascending=False)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="Current", x=comp.index, y=comp["Current"], marker_color=BLUE))
+    fig.add_trace(go.Bar(name="Target", x=comp.index, y=comp["Target"], marker_color=GOLD))
+    fig = style_fig(fig, 380)
+    fig.update_layout(barmode="group")
+    fig.update_yaxes(tickformat=".0%")
+    show(fig)
+    st.dataframe(comp.style.format("{:.1%}").map(color_pnl, subset=["Gap"]),
+                 width="stretch")
+
+    under = comp[comp["Gap"] > 0.03].sort_values("Gap", ascending=False)
+    over = comp[comp["Gap"] < -0.03].sort_values("Gap")
+    add_txt = ", ".join(f"**{i}** (+{comp.loc[i, 'Gap']:.0%})" for i in under.index[:4])
+    trim_txt = ", ".join(f"**{i}** ({comp.loc[i, 'Gap']:.0%})" for i in over.index[:2])
+    if add_txt:
+        flag("warn", f"To reach the {method.lower()} target, **add**: {add_txt}"
+             + (f" · **trim**: {trim_txt}" if trim_txt else "")
+             + ". These are value / small / international sleeves you hold ~none of today.")
+    st.caption(
+        f"Target over AVGE's 10 Avantis sleeves; covariance from {o['cov_months']} months "
+        "(shrunk). Canada "
+        f"({canada:.0%}) is excluded — no Avantis sleeve, so it sits outside this factor "
+        "framework. **Implementation:** you can't close these gaps with XEQT/XUS/AVGE alone "
+        "(all market-cap) — materially tilting toward value/small/intl means holding the "
+        "Avantis sleeves directly. That's the §6 strategic decision. Min-Variance concentrates "
+        "in low-vol/diversifying sleeves; Risk Parity spreads by inverse-vol; Equal Weight is "
+        "the naive baseline.")
 
 
 def render_leverage():
@@ -851,7 +906,7 @@ with t_acct:
         render_contributions()
 with t_analytics:
     an1, an2, an3, an4 = st.tabs(
-        ["Benchmarks", "Factor Exposure", "Correlations", "Look-Through"])
+        ["Benchmarks", "Factor Exposure", "Correlations", "Policy (§6)"])
     with an1:
         render_benchmarks()
     with an2:
