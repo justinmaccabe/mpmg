@@ -281,11 +281,17 @@ def require_passcode():
     if not code or st.session_state.get("authed"):
         return
     st.markdown(
-        "<div style='text-align:center; margin-top:8vh; line-height:1;'>"
-        f"<span style='font-family:{SERIF}; font-style:italic; font-size:3.6rem; color:{GOLD};'>M</span>"
-        f"<span style='font-family:{SERIF}; font-size:1.05rem; color:#FFFFFF; letter-spacing:.04em;'>wealth</span>"
+        "<div style='text-align:center; margin-top:7vh;'>"
+        f"<div style='width:84px; height:84px; border:1.5px solid {GOLD}; border-radius:12px;"
+        " display:inline-flex; flex-direction:column; align-items:center;"
+        " justify-content:center; line-height:1;'>"
+        f"<span style='font-family:{SERIF}; font-style:italic; font-size:2.6rem; color:{GOLD};'>M</span>"
+        f"<span style='font-family:{SERIF}; font-size:.5rem; letter-spacing:.22em;"
+        " color:#FFFFFF; margin-top:3px;'>WEALTH</span></div>"
+        f"<div style='font-family:{SERIF}; font-size:2rem; color:#F4F4F4; margin-top:.9rem;'>"
+        f"Maccabe Portfolio Management <span style='color:{GOLD};'>Group</span></div>"
         f"<div style='color:{GOLD}; letter-spacing:.4em; text-transform:uppercase;"
-        " font-size:.7rem; margin-top:.8rem;'>Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>"
+        " font-size:.7rem; margin-top:.5rem;'>Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>"
         "</div>", unsafe_allow_html=True)
     c = st.columns([1, 1, 1])
     with c[1]:
