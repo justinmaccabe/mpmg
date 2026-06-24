@@ -305,6 +305,59 @@ def factor_exposure(positions: pd.DataFrame, instruments: pd.DataFrame, period="
                        ff.index.max().strftime("%b %Y"))}
 
 
+# --- Look-through (§6 Phase 1) -------------------------------------------
+# AVGE's published sub-ETF weights (renormalized to 100% in look_through).
+AVGE_HOLDINGS = {
+    "AVUS": 42.79, "AVLV": 15.21, "AVDE": 10.61, "AVEM": 6.94, "AVIV": 5.40,
+    "AVUV": 3.48, "AVES": 3.46, "AVSC": 3.37, "AVRE": 2.73, "AVMV": 1.35,
+}
+# XEQT regional mix (iShares published geographic, approximate — editable).
+XEQT_HOLDINGS = {
+    "US Market": 0.45, "Canada Market": 0.245, "Intl Dev Market": 0.215, "EM Market": 0.09,
+}
+# (region, style) classification for each building block.
+BLOCK_CLASS = {
+    "AVUS": ("US", "Market"), "AVLV": ("US", "Value"), "AVUV": ("US", "Small Value"),
+    "AVSC": ("US", "Small"), "AVMV": ("US", "Value"), "AVRE": ("US", "Real Estate"),
+    "AVDE": ("Intl Dev", "Market"), "AVIV": ("Intl Dev", "Value"),
+    "AVEM": ("EM", "Market"), "AVES": ("EM", "Value"),
+    "US Market": ("US", "Market"), "Canada Market": ("Canada", "Market"),
+    "Intl Dev Market": ("Intl Dev", "Market"), "EM Market": ("EM", "Market"),
+}
+
+
+def look_through(positions: pd.DataFrame, instruments: pd.DataFrame) -> dict:
+    """Decompose the market sleeve into underlying building blocks and roll up
+    region / style exposure (MV-weighted). Private holdings (OPO) are excluded."""
+    inst = instruments.set_index("ticker")
+    blocks, total = {}, 0.0
+    for _, p in positions.iterrows():
+        t, mv = p["Ticker"], float(p["Market Value"])
+        if t not in inst.index or inst.loc[t, "is_private"]:
+            continue
+        total += mv
+        if t == "AVGE":
+            denom = sum(AVGE_HOLDINGS.values())
+            for b, w in AVGE_HOLDINGS.items():
+                blocks[b] = blocks.get(b, 0.0) + mv * w / denom
+        elif t == "XEQT":
+            for b, w in XEQT_HOLDINGS.items():
+                blocks[b] = blocks.get(b, 0.0) + mv * w
+        elif t == "XUS":
+            blocks["US Market"] = blocks.get("US Market", 0.0) + mv
+        else:
+            blocks[t] = blocks.get(t, 0.0) + mv
+    if not total:
+        return {"blocks": {}, "region": {}, "style": {}}
+    blocks = {b: v / total for b, v in blocks.items()}
+    region, style = {}, {}
+    for b, w in blocks.items():
+        r, sty = BLOCK_CLASS.get(b, ("Other", "Market"))
+        region[r] = region.get(r, 0.0) + w
+        style[sty] = style.get(sty, 0.0) + w
+    return {"blocks": blocks, "region": region, "style": style}
+
+
 def tfsa_cumulative_room(year: int) -> float:
     """Total TFSA room accrued from the year you turned 18 through `year`."""
     start = db.USER_BIRTH_YEAR + 18

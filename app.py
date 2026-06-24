@@ -636,6 +636,54 @@ def render_correlations():
                "Private holdings (OPO) are excluded — no market data.")
 
 
+def render_lookthrough():
+    st.subheader("Portfolio Look-Through")
+    pos, _ = load_portfolio()
+    if pos.empty:
+        st.info("No positions yet.")
+        return
+    lt = portfolio.look_through(pos, db.get_instruments_df())
+    if not lt["blocks"]:
+        st.info("No market holdings to decompose.")
+        return
+    reg, sty = lt["region"], lt["style"]
+    tilt = 1 - sty.get("Market", 0.0)
+    st.caption(
+        "Your equity sleeve (OPO excluded), seen through to the underlying funds — "
+        f"**{reg.get('US', 0):.0%} US · {reg.get('Intl Dev', 0):.0%} Intl · "
+        f"{reg.get('EM', 0):.0%} EM · {reg.get('Canada', 0):.0%} Canada**, and only "
+        f"**{tilt:.0%} factor-tilted** (value/small) vs plain market-cap — because AVGE "
+        "is a small slice and is itself mostly US market.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("##### By Region")
+        order = ["US", "Canada", "Intl Dev", "EM", "Other"]
+        items = [(k, reg[k]) for k in order if k in reg]
+        fig = go.Figure(go.Pie(labels=[k for k, _ in items], values=[v for _, v in items],
+                        hole=.6, marker=dict(colors=PALETTE), textinfo="label+percent"))
+        show(style_fig(fig, 340, legend=False))
+    with c2:
+        st.markdown("##### By Style")
+        items = sorted(sty.items(), key=lambda x: x[1])
+        fig = go.Figure(go.Bar(
+            x=[v for _, v in items], y=[k for k, _ in items], orientation="h",
+            marker_color=GOLD, text=[f"{v:.0%}" for _, v in items],
+            textposition="outside", cliponaxis=False))
+        fig = style_fig(fig, 340, legend=False)
+        fig.update_xaxes(tickformat=".0%")
+        show(fig)
+
+    st.markdown("##### Underlying Building Blocks")
+    bdf = pd.DataFrame([{"Building block": b, "Weight": w}
+                        for b, w in sorted(lt["blocks"].items(), key=lambda x: -x[1])])
+    st.dataframe(bdf.style.format({"Weight": "{:.1%}"}), width="stretch", hide_index=True)
+    st.caption("AVGE decomposed into its 10 Avantis sleeves (renormalized to 100%); XEQT "
+               "into iShares regional weights (approx.); XUS as US large-cap. This is the "
+               "candidate universe for the §6 optimization — Phase 2 finds target weights "
+               "and the gaps from here.")
+
+
 def render_leverage():
     st.subheader("Leverage")
     pos, totals = load_portfolio()
@@ -802,13 +850,16 @@ with t_acct:
     with ac2:
         render_contributions()
 with t_analytics:
-    an1, an2, an3 = st.tabs(["Benchmarks", "Factor Exposure", "Correlations"])
+    an1, an2, an3, an4 = st.tabs(
+        ["Benchmarks", "Factor Exposure", "Correlations", "Look-Through"])
     with an1:
         render_benchmarks()
     with an2:
         render_factor()
     with an3:
         render_correlations()
+    with an4:
+        render_lookthrough()
 with t_risk:
     render_leverage()
 with t_manage:
