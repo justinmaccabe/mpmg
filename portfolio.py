@@ -381,32 +381,37 @@ def optimize_blocks(period="5y") -> dict:
     hist = pricelib.get_history(syms, period=period)
     if hist.empty:
         return {}
-    monthly = hist.resample("ME").last().pct_change()
-    assets = [s for s in syms if s in monthly.columns and monthly[s].notna().sum() >= 12]
+    monthly = hist.resample("ME").last().pct_change(fill_method=None)
+    assets = [s for s in syms if s in monthly.columns
+              and int(monthly[s].notna().sum()) >= 12]
     if len(assets) < 2:
         return {}
-    monthly = monthly[assets]
-    vol = monthly.std()                                  # per-asset, own history
-    common = monthly.dropna()                            # aligned window for covariance
+    arr = monthly[assets].to_numpy(dtype=float)           # rows=months, cols=assets
     n = len(assets)
-    ew = pd.Series(1.0 / n, index=assets)
-    iv = (1.0 / vol)
-    iv = iv / iv.sum()
+    ew = np.full(n, 1.0 / n)
+    vol = np.nanstd(arr, axis=0, ddof=1)                  # per-asset, own history
+    vol = np.where(vol > 0, vol, np.nan)
+    iv = 1.0 / vol
+    iv = iv / np.nansum(iv)
+    common = arr[~np.isnan(arr).any(axis=1)]              # aligned window for covariance
     if len(common) >= n + 2:
-        cov = common.cov().values
+        cov = np.cov(common, rowvar=False)
         cov = 0.85 * cov + 0.15 * np.diag(np.diag(cov))   # light shrinkage to diagonal
         try:
             w = np.linalg.pinv(cov) @ np.ones(n)
             w = np.clip(w, 0, None)
-            mv = pd.Series(w / w.sum() if w.sum() > 0 else ew.values, index=assets)
+            mv = w / w.sum() if w.sum() > 0 else ew
         except Exception:
             mv = ew
-        cov_months = len(common)
     else:
-        mv = iv                                           # not enough overlap for cov
-        cov_months = len(common)
-    return {"assets": assets, "equal": ew, "invvol": iv, "minvar": mv,
-            "vol": vol, "cov_months": int(cov_months)}
+        mv = np.nan_to_num(iv, nan=0.0)                   # not enough overlap for cov
+    cov_months = int(len(common))
+
+    def series(a):
+        return pd.Series(np.nan_to_num(a, nan=0.0), index=assets)
+
+    return {"assets": assets, "equal": series(ew), "invvol": series(iv),
+            "minvar": series(mv), "vol": series(vol), "cov_months": cov_months}
 
 
 def tfsa_cumulative_room(year: int) -> float:

@@ -693,7 +693,11 @@ def render_lookthrough():
         "Method", ["Min-Variance", "Risk Parity (inv-vol)", "Equal Weight"],
         default="Min-Variance", label_visibility="collapsed", key="opt_method") \
         or "Min-Variance"
-    o = load_optim("5y")
+    try:
+        o = load_optim("5y")
+    except Exception as e:
+        st.warning(f"Optimizer unavailable — {type(e).__name__}: {e}")
+        return
     if not o:
         st.warning("Couldn't load optimizer data (offline?). Try again shortly.")
         return
