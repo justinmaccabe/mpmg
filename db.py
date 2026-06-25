@@ -103,7 +103,8 @@ transactions = Table(
 snapshots = Table(
     "snapshots", metadata,
     Column("date", Date, primary_key=True),
-    Column("market_value", Float),
+    Column("market_value", Float),        # the day's close (latest)
+    Column("market_value_open", Float),   # the mid-morning "open" snapshot
     Column("book_value", Float),
     Column("gain_loss", Float),
     Column("gain_loss_pct", Float),

@@ -379,8 +379,13 @@ def render_overview():
                 s = s.resample(rule).last().dropna(how="all")
             s = s.reset_index()
             fig = go.Figure()
+            if rule is None and "market_value_open" in s.columns \
+                    and s["market_value_open"].notna().any():
+                fig.add_trace(go.Scatter(x=s["date"], y=s["market_value_open"],
+                              mode="markers", name="Open",
+                              marker=dict(size=9, color="#8FB3D9", symbol="circle-open")))
             fig.add_trace(go.Scatter(x=s["date"], y=s["market_value"],
-                          mode="lines+markers", name="Market Value",
+                          mode="lines+markers", name="Close",
                           line=dict(color=BLUE, width=2), marker=dict(size=8)))
             if s["book_value"].notna().any():
                 fig.add_trace(go.Scatter(x=s["date"], y=s["book_value"],
@@ -390,7 +395,10 @@ def render_overview():
             fig = style_fig(fig, 340)
             fig.update_yaxes(title="CAD", tickformat="$,.0f")
             fig.update_xaxes(type="date", tickformat="%b %d, %Y")
-            yvals = pd.concat([s["market_value"], s["book_value"]]).dropna()
+            ycols = [s["market_value"], s["book_value"]]
+            if "market_value_open" in s.columns:
+                ycols.append(s["market_value_open"])
+            yvals = pd.concat(ycols).dropna()
             if len(yvals):
                 lo, hi = float(yvals.min()), float(yvals.max())
                 pad = (hi - lo) * 0.25 if hi > lo else max(hi * 0.02, 1.0)
@@ -402,9 +410,8 @@ def render_overview():
             if HIDE:
                 fig.update_yaxes(showticklabels=False, title=None)
             show(fig)
-            st.caption("Daily / Weekly / Monthly resampling of the recorded snapshots "
-                       "(period-end value). The weekly and monthly views fill in as "
-                       "history accumulates.")
+            st.caption("Open (mid-morning) and Close (end of day) recorded each weekday; "
+                       "weekly/monthly views use the close. History fills in as it accrues.")
         else:
             st.info("No snapshots yet — they appear once the daily job runs.")
     with c2:
