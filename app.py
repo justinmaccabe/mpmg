@@ -147,6 +147,21 @@ def fmt_money0(v):
     return MASK if HIDE else f"${v:,.0f}"
 
 
+def logo_html(box, m, w):
+    """The M·WEALTH mark: gold-gradient serif M over white WEALTH in a gold square.
+    Font is inherited from the global serif rule (avoids quoting issues)."""
+    rad = round(box * 0.2)
+    return (
+        f"<div style='width:{box}px; height:{box}px; border:2px solid {GOLD};"
+        f" border-radius:{rad}px; display:inline-flex; flex-direction:column;"
+        " align-items:center; justify-content:center; line-height:1; flex:0 0 auto;'>"
+        f"<span style='font-weight:600; font-size:{m}rem;"
+        " background:linear-gradient(175deg,#EAD888 0%,#C9A227 50%,#A87E1C 100%);"
+        " -webkit-background-clip:text; background-clip:text; color:transparent;'>M</span>"
+        f"<span style='color:#FFFFFF; letter-spacing:.4em; font-size:{w}rem;"
+        " text-indent:.4em; margin-top:.12em;'>WEALTH</span></div>")
+
+
 def style_fig(fig, height=360, legend=True):
     fig.update_layout(
         height=height, template="plotly_dark",
@@ -286,14 +301,9 @@ def require_passcode():
     if not code or st.session_state.get("authed"):
         return
     st.markdown(
-        "<div style='text-align:center; margin-top:7vh;'>"
-        f"<div style='width:84px; height:84px; border:1.5px solid {GOLD}; border-radius:12px;"
-        " display:inline-flex; flex-direction:column; align-items:center;"
-        " justify-content:center; line-height:1;'>"
-        f"<span style='font-family:{SERIF}; font-style:italic; font-size:2.6rem; color:{GOLD};'>M</span>"
-        f"<span style='font-family:{SERIF}; font-style:italic; font-size:.52rem;"
-        " letter-spacing:.14em; color:#FFFFFF; margin-top:2px;'>WEALTH</span></div>"
-        f"<div style='font-family:{SERIF}; font-size:2rem; color:#F4F4F4; margin-top:.9rem;'>"
+        "<div style='text-align:center; margin-top:6vh;'>"
+        + logo_html(124, 3.5, 0.72) +
+        f"<div style='font-family:{SERIF}; font-size:2rem; color:#F4F4F4; margin-top:1rem;'>"
         f"Maccabe Portfolio Management <span style='color:{GOLD};'>Group</span></div>"
         f"<div style='color:{GOLD}; letter-spacing:.4em; text-transform:uppercase;"
         " font-size:.7rem; margin-top:.5rem;'>Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>"
@@ -869,9 +879,9 @@ def render_ips():
 require_passcode()
 
 st.markdown(
-    "<div class='mpmg-header'><div class='mpmg-mark'>M</div>"
-    "<div class='mpmg-title'>Maccabe Portfolio Management <span class='amp'>Group</span></div>"
-    "</div>", unsafe_allow_html=True)
+    "<div class='mpmg-header'>" + logo_html(58, 1.85, 0.30) +
+    "<div class='mpmg-title' style='margin-left:.85rem;'>Maccabe Portfolio Management "
+    "<span class='amp'>Group</span></div></div>", unsafe_allow_html=True)
 
 hc1, hc2 = st.columns([5, 2], vertical_alignment="center")
 with hc1:
