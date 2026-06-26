@@ -15,6 +15,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db
 import portfolio
+import prices as pricelib
+
+
+def _persist_last_prices():
+    """Save each holding's current live price as its last-known fallback."""
+    inst = db.get_instruments_df()
+    syms = [s for s in inst["yf_symbol"].dropna().tolist()]
+    q = pricelib.get_current_and_prev(syms)
+    for _, r in inst.iterrows():
+        sym = r["yf_symbol"]
+        if sym and sym in q.index and pd.notna(q.loc[sym, "price"]):
+            db.set_last_price(r["ticker"], float(q.loc[sym, "price"]))
 
 
 def _today_row():
@@ -34,6 +46,7 @@ def main():
     if not totals:
         print("No positions; nothing to record.")
         return
+    _persist_last_prices()
     mv = totals["market_value"]
     is_open = dt.datetime.utcnow().hour < 18      # 14:05 UTC = open, 21:05 = close
     prev = _today_row()

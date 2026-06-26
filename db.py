@@ -86,6 +86,7 @@ instruments = Table(
     Column("currency", String, nullable=False, default="CAD"),
     Column("is_private", Boolean, nullable=False, default=False),
     Column("manual_price", Float),
+    Column("last_price", Float),          # last good live price (yesterday fallback)
 )
 
 transactions = Table(
@@ -241,6 +242,12 @@ def set_settings(values: dict):
         for k, v in values.items():
             conn.execute(settings.delete().where(settings.c.key == k))
             conn.execute(settings.insert().values(key=k, value=float(v)))
+
+
+def set_last_price(ticker, price):
+    with engine.begin() as conn:
+        conn.execute(instruments.update().where(instruments.c.ticker == ticker)
+                     .values(last_price=float(price)))
 
 
 def set_manual_price(ticker, price):

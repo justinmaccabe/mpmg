@@ -55,14 +55,27 @@ def build_portfolio(tx: pd.DataFrame, instruments: pd.DataFrame):
         cur = meta["currency"]
         fx = _fx(cur, usd_cad)
 
-        if meta["is_private"] or not meta["yf_symbol"] or meta["yf_symbol"] not in quotes.index:
-            # no live quote → manual price, else cost basis (avoids a scary $0 on a
-            # transient fetch failure; shows book value with zero daily move)
-            price = meta["manual_price"] or p["acb"] or 0.0
+        sym = meta["yf_symbol"]
+        live = None
+        if sym and sym in quotes.index and pd.notna(quotes.loc[sym, "price"]):
+            live = float(quotes.loc[sym, "price"])
+            prev = float(quotes.loc[sym, "prev_close"])
+        if meta["is_private"]:
+            price = float(meta["manual_price"] or 0.0)
             prev = price
+        elif live is not None:
+            price = live
         else:
-            price = quotes.loc[meta["yf_symbol"], "price"]
-            prev = quotes.loc[meta["yf_symbol"], "prev_close"]
+            # live fetch failed → fall back to last known price (yesterday),
+            # then manual, then cost basis. Never show $0 / None.
+            lp = meta["last_price"] if "last_price" in inst.columns else None
+            if lp is not None and pd.notna(lp) and lp:
+                price = float(lp)
+            elif meta["manual_price"] and pd.notna(meta["manual_price"]):
+                price = float(meta["manual_price"])
+            else:
+                price = float(p["acb"] or 0.0)
+            prev = price
 
         shares = p["shares"]
         mv = shares * price * fx
