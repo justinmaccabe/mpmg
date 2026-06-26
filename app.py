@@ -394,7 +394,17 @@ def render_overview():
                               marker=dict(size=7)))
             fig = style_fig(fig, 340)
             fig.update_yaxes(title="CAD", tickformat="$,.0f")
-            fig.update_xaxes(type="date", tickformat="%b %d, %Y")
+            # one tick per data point, labelled per granularity
+            if rule is None:                                   # daily
+                ticktext = s["date"].dt.strftime("%b %d, %Y")
+            elif rule == "W":                                  # weekly → Monday
+                monday = s["date"] - pd.to_timedelta(s["date"].dt.weekday, unit="D")
+                ticktext = ("<span style='font-size:0.72em'>Week of</span><br>"
+                            + monday.dt.strftime("%b %d, %Y"))
+            else:                                              # monthly → month name
+                ticktext = s["date"].dt.strftime("%B")
+            fig.update_xaxes(type="date", tickmode="array",
+                             tickvals=s["date"], ticktext=ticktext.tolist())
             ycols = [s["market_value"], s["book_value"]]
             if "market_value_open" in s.columns:
                 ycols.append(s["market_value_open"])

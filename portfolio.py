@@ -56,7 +56,9 @@ def build_portfolio(tx: pd.DataFrame, instruments: pd.DataFrame):
         fx = _fx(cur, usd_cad)
 
         if meta["is_private"] or not meta["yf_symbol"] or meta["yf_symbol"] not in quotes.index:
-            price = meta["manual_price"] or 0.0
+            # no live quote → manual price, else cost basis (avoids a scary $0 on a
+            # transient fetch failure; shows book value with zero daily move)
+            price = meta["manual_price"] or p["acb"] or 0.0
             prev = price
         else:
             price = quotes.loc[meta["yf_symbol"], "price"]
