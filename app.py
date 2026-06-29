@@ -378,33 +378,34 @@ def render_overview():
             if rule:
                 s = s.resample(rule).last().dropna(how="all")
             s = s.reset_index()
+            # evenly-spaced category labels — one slot per snapshot, so weekends
+            # never create gaps and every point (incl. today) is labelled
+            if rule is None:                                   # daily
+                s["_lbl"] = s["date"].dt.strftime("%b %d, %Y")
+            elif rule == "W":                                  # weekly → Monday
+                monday = s["date"] - pd.to_timedelta(s["date"].dt.weekday, unit="D")
+                s["_lbl"] = ("<span style='font-size:0.72em'>Week of</span><br>"
+                             + monday.dt.strftime("%b %d, %Y"))
+            else:                                              # monthly → month name
+                s["_lbl"] = s["date"].dt.strftime("%B")
             fig = go.Figure()
             if rule is None and "market_value_open" in s.columns \
                     and s["market_value_open"].notna().any():
-                fig.add_trace(go.Scatter(x=s["date"], y=s["market_value_open"],
+                fig.add_trace(go.Scatter(x=s["_lbl"], y=s["market_value_open"],
                               mode="markers", name="Open",
                               marker=dict(size=9, color="#8FB3D9", symbol="circle-open")))
-            fig.add_trace(go.Scatter(x=s["date"], y=s["market_value"],
+            fig.add_trace(go.Scatter(x=s["_lbl"], y=s["market_value"],
                           mode="lines+markers", name="Close",
                           line=dict(color=BLUE, width=2), marker=dict(size=8)))
             if s["book_value"].notna().any():
-                fig.add_trace(go.Scatter(x=s["date"], y=s["book_value"],
+                fig.add_trace(go.Scatter(x=s["_lbl"], y=s["book_value"],
                               mode="lines+markers", name="Book Value",
                               line=dict(color=GOLD, width=1.5, dash="dot"),
                               marker=dict(size=7)))
             fig = style_fig(fig, 340)
             fig.update_yaxes(title="CAD", tickformat="$,.0f")
-            # one tick per data point, labelled per granularity
-            if rule is None:                                   # daily
-                ticktext = s["date"].dt.strftime("%b %d, %Y")
-            elif rule == "W":                                  # weekly → Monday
-                monday = s["date"] - pd.to_timedelta(s["date"].dt.weekday, unit="D")
-                ticktext = ("<span style='font-size:0.72em'>Week of</span><br>"
-                            + monday.dt.strftime("%b %d, %Y"))
-            else:                                              # monthly → month name
-                ticktext = s["date"].dt.strftime("%B")
-            fig.update_xaxes(type="date", tickmode="array",
-                             tickvals=s["date"], ticktext=ticktext.tolist())
+            fig.update_xaxes(type="category", categoryorder="array",
+                             categoryarray=s["_lbl"].tolist())
             ycols = [s["market_value"], s["book_value"]]
             if "market_value_open" in s.columns:
                 ycols.append(s["market_value_open"])
@@ -413,10 +414,6 @@ def render_overview():
                 lo, hi = float(yvals.min()), float(yvals.max())
                 pad = (hi - lo) * 0.25 if hi > lo else max(hi * 0.02, 1.0)
                 fig.update_yaxes(range=[lo - pad, hi + pad])
-            if len(s) == 1:
-                d = s["date"].iloc[0]
-                fig.update_xaxes(range=[d - pd.Timedelta(days=4),
-                                        d + pd.Timedelta(days=4)])
             if HIDE:
                 fig.update_yaxes(showticklabels=False, title=None)
             show(fig)
