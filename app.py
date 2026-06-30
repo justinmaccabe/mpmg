@@ -25,6 +25,7 @@ POS, NEG = "#16C784", "#E0533D"    # reserved for P&L semantics only
 SERIF = "'Times New Roman', Georgia, serif"
 # refined, desaturated categorical palette (gold-led, "private wealth")
 PALETTE = ["#C9A227", "#6E8CA0", "#6FA287", "#B07B53", "#8E83A8", "#5F94A0", "#9CA3AB"]
+SAGE = "#6FA287"      # muted green for gain/contribution bars (paired with NEG)
 
 st.markdown(f"""
 <style>
@@ -395,7 +396,7 @@ def render_overview():
                      else "%{y}: $%{x:,.2f}<extra></extra>")
             fig = go.Figure(go.Bar(
                 x=g[metric], y=g["Ticker"], orientation="h",
-                marker_color=[NEG if v < 0 else POS for v in g[metric]],
+                marker_color=[NEG if v < 0 else SAGE for v in g[metric]],
                 hovertemplate=htmpl))
             fig = style_fig(fig, 360, legend=False)
             fig.update_xaxes(tickformat=".0%" if HIDE else "$,.0f")
@@ -509,7 +510,7 @@ def render_overview():
         contrib = [r["contribution"] for r in rows]
         fig = go.Figure(go.Bar(
             x=contrib, y=[r["ticker"] for r in rows], orientation="h",
-            marker_color=[POS if c >= 0 else NEG for c in contrib],
+            marker_color=[SAGE if c >= 0 else NEG for c in contrib],
             text=[f"{c:+.2%}" for c in contrib], textposition="outside",
             cliponaxis=False,
             hovertemplate="%{y}: %{x:.2%} contribution<extra></extra>"))
