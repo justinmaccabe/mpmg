@@ -134,6 +134,11 @@ def load_optim(period):
     return portfolio.optimize_blocks(period)
 
 
+@st.cache_data(ttl=3600)
+def load_period_returns(sig):
+    return portfolio.period_returns(db.get_transactions_df(), db.get_instruments_df())
+
+
 HIDE = False          # set in the main flow; when True, dollar amounts are masked
 GUEST = False
 MASK = "$ •••••"
@@ -233,6 +238,43 @@ def kpi_ribbon():
     st.markdown(
         f"<div style='display:flex; background:rgba(255,255,255,.022);"
         f" border:1px solid rgba(201,162,39,.18); border-radius:11px;"
+        f" margin-bottom:.6rem;'>{cells}</div>", unsafe_allow_html=True)
+
+
+def period_ribbon():
+    """Week-to-date and month-to-date returns (portfolio vs S&P 500). Percentages,
+    so always shown — not masked by Hide Balances."""
+    try:
+        pr = load_period_returns(holdings_sig())
+    except Exception:
+        return                       # e.g. stale module pre-reboot — skip silently
+    if not pr:
+        return
+
+    def pct(x):
+        return "—" if x is None else f"{x:+.2%}"
+
+    def tone(x):
+        return "#9AA0AB" if x is None else (POS if x >= 0 else NEG)
+
+    def cell(label, port, bench, first):
+        border = "" if first else "border-left:1px solid rgba(201,162,39,.18);"
+        return (
+            f"<div style='flex:1; padding:.3rem 1.3rem; {border}'>"
+            f"<div style='color:#9AA0AB; text-transform:uppercase; letter-spacing:.14em;"
+            f" font-size:.6rem;'>{label}</div>"
+            f"<div class='mpmg-num' style='font-size:1.05rem;'>"
+            f"<span style='color:#9AA0AB; font-size:.8rem;'>Portfolio</span> "
+            f"<span style='color:{tone(port)};'>{pct(port)}</span>"
+            f"<span style='color:#5A5F6A;'> &nbsp;·&nbsp; </span>"
+            f"<span style='color:#9AA0AB; font-size:.8rem;'>S&amp;P 500</span> "
+            f"<span style='color:{tone(bench)};'>{pct(bench)}</span></div></div>")
+
+    cells = (cell("Week to Date", pr["wtd_port"], pr["wtd_bench"], True)
+             + cell("Month to Date", pr["mtd_port"], pr["mtd_bench"], False))
+    st.markdown(
+        f"<div style='display:flex; background:rgba(255,255,255,.015);"
+        f" border:1px solid rgba(201,162,39,.12); border-radius:11px;"
         f" margin-bottom:1.1rem;'>{cells}</div>", unsafe_allow_html=True)
 
 
@@ -333,7 +375,8 @@ def render_overview():
             st.subheader("Allocation by Holding")
             fig = go.Figure(go.Pie(
                 labels=pos["Ticker"], values=pos["Market Value"], hole=.6,
-                marker=dict(colors=PALETTE), textinfo="label+percent"))
+                marker=dict(colors=PALETTE), textinfo="label+percent",
+                hovertemplate="%{label}: %{percent}<extra></extra>"))
             fig.update_layout(annotations=[dict(
                 text="" if HIDE else money(totals["market_value"]), x=.5, y=.5,
                 font=dict(family=SERIF, size=16, color="#F4F4F4"), showarrow=False)])
@@ -416,6 +459,7 @@ def render_overview():
                 fig.update_yaxes(range=[lo - pad, hi + pad])
             if HIDE:
                 fig.update_yaxes(showticklabels=False, title=None)
+                fig.update_traces(hoverinfo="skip", hovertemplate=None)
             show(fig)
             st.caption("Open (mid-morning) and Close (end of day) recorded each weekday; "
                        "weekly/monthly views use the close. History fills in as it accrues.")
@@ -429,7 +473,8 @@ def render_overview():
             fig = go.Figure(go.Pie(
                 labels=cur.index, values=cur.values, hole=.6,
                 marker=dict(colors=[cmap.get(c, "#8A8F9A") for c in cur.index]),
-                textinfo="label+percent"))
+                textinfo="label+percent",
+                hovertemplate="%{label}: %{percent}<extra></extra>"))
             fig.update_layout(annotations=[dict(
                 text=f"{cur.get('USD', 0.0) / cur.sum():.0%} USD", x=.5, y=.5,
                 font=dict(family=SERIF, size=15, color="#F4F4F4"), showarrow=False)])
@@ -457,7 +502,8 @@ def render_accounts():
         st.subheader("Balance by Account")
         fig = go.Figure(go.Pie(
             labels=["FHSA", "TFSA"], values=[amv["FHSA"], amv["TFSA"]],
-            hole=.6, marker=dict(colors=[GOLD, BLUE]), textinfo="label+percent"))
+            hole=.6, marker=dict(colors=[GOLD, BLUE]), textinfo="label+percent",
+            hovertemplate="%{label}: %{percent}<extra></extra>"))
         show(style_fig(fig, 360, legend=False))
     with right:
         st.subheader("Holdings by Account")
@@ -471,6 +517,7 @@ def render_accounts():
         fig.update_yaxes(title="CAD", tickformat="$,.0f")
         if HIDE:
             fig.update_yaxes(showticklabels=False, title=None)
+            fig.update_traces(hoverinfo="skip", hovertemplate=None)
         show(fig)
 
     st.subheader("Per-Account Detail")
@@ -515,9 +562,10 @@ def render_contributions():
     with a:
         st.markdown("#### TFSA")
         st.metric("Room remaining (all-time)", money(tfsa_room - tfsa_used),
-                  f"{tfsa_used / tfsa_room:.0%} of ${tfsa_room:,.0f} used",
+                  None if HIDE else f"{tfsa_used / tfsa_room:.0%} of ${tfsa_room:,.0f} used",
                   delta_color="off")
-        st.progress(min(1.0, max(0.0, tfsa_used / tfsa_room)))
+        if not HIDE:
+            st.progress(min(1.0, max(0.0, tfsa_used / tfsa_room)))
         st.caption(f"Contributed {money(tfsa_used)} all-time · {money(tfsa_ytd)} in "
                    f"{yr}. Cumulative room since age 18 ({db.USER_BIRTH_YEAR + 18}): "
                    f"${tfsa_room:,.0f}. All TFSAs (RBC + Optimize) share this limit.")
@@ -528,7 +576,8 @@ def render_contributions():
         st.metric("Room remaining this year", money(fh["available_this_year"]),
                   "Maxed for the year" if fh["available_this_year"] <= 0 else None,
                   delta_color="off")
-        st.progress(min(1.0, max(0.0, fh["used_lifetime"] / db.FHSA_LIFETIME_LIMIT)))
+        if not HIDE:
+            st.progress(min(1.0, max(0.0, fh["used_lifetime"] / db.FHSA_LIFETIME_LIMIT)))
         st.caption(f"Contributed {money(fhsa_ytd)} in {yr}. Lifetime "
                    f"{money(fh['used_lifetime'])} of ${db.FHSA_LIFETIME_LIMIT:,.0f} "
                    f"used · {money(fh['lifetime_remaining'])} remaining.")
@@ -801,10 +850,16 @@ def render_leverage():
     c2.metric("Equity", money(lev["equity"]))
     c3.metric("Gross exposure", money(lev["gross_exposure"]))
     c4.metric("LOC rate", f"{lev['loc_rate'] * 100:.2f}%")
-    d1, d2, d3 = st.columns(3)
+    try:
+        pp = perf_portfolio("3y")
+        mdd = portfolio.max_drawdown(pp) if not pp.empty else None
+    except Exception:
+        mdd = None
+    d1, d2, d3, d4 = st.columns(4)
     d1.metric("Annual interest", money(lev["annual_interest"]))
     d2.metric("Monthly interest", money(lev["monthly_interest"]))
     d3.metric("Drawdown from peak", f"{lev['drawdown']:.1%}")
+    d4.metric("Max drawdown (3Y)", f"{mdd:.1%}" if mdd is not None else "—")
     e1, e2, e3 = st.columns(3)
     e1.metric("Est. portfolio yield", f"{yld_pct:.2f}%")
     p_sh, b_sh = sh.get("portfolio"), sh.get("benchmark")
@@ -912,6 +967,7 @@ with hc2:
 st.markdown("<hr class='mpmg-rule'>", unsafe_allow_html=True)
 
 kpi_ribbon()
+period_ribbon()
 
 # Prompt for this month's OPO buy once it's due (skippable for the session)
 if not GUEST and not st.session_state.get("opo_skip"):

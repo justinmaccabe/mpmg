@@ -4,12 +4,48 @@ Everything is reported in the base currency (CAD). USD holdings are converted at
 the current USD/CAD rate. Note: cost basis is converted at *today's* FX rather than
 the FX on each purchase date — a deliberate simplification for a personal tracker.
 """
+import datetime as dt
+
 import numpy as np
 import pandas as pd
 
 import db
 import prices as pricelib
 from db import BASE_CURRENCY, BENCHMARK_SYMBOL
+
+
+def max_drawdown(series) -> float:
+    """Worst peak-to-trough decline of a value series (negative number)."""
+    if series is None or len(series) < 2:
+        return None
+    rm = series.cummax()
+    return float((series / rm - 1).min())
+
+
+def _ret_to_date(series, since) -> float:
+    """Return from the last close strictly before `since` to the latest value."""
+    if series is None or len(series) == 0:
+        return None
+    base = series[series.index < pd.Timestamp(since)]
+    if base.empty:
+        return None
+    return float(series.iloc[-1] / base.iloc[-1] - 1)
+
+
+def period_returns(tx, instruments) -> dict:
+    """Week-to-date and month-to-date returns: portfolio (current holdings
+    backtested, OPO excluded) vs the benchmark."""
+    pv = portfolio_performance(tx, instruments, "6mo")
+    bench = pricelib.get_history([BENCHMARK_SYMBOL], period="6mo")
+    bench = bench[BENCHMARK_SYMBOL] if BENCHMARK_SYMBOL in bench.columns else pd.Series(dtype=float)
+    today = dt.date.today()
+    wk = today - dt.timedelta(days=today.weekday())     # this week's Monday
+    mo = today.replace(day=1)                           # first of this month
+    return {
+        "wtd_port": _ret_to_date(pv, wk), "wtd_bench": _ret_to_date(bench, wk),
+        "mtd_port": _ret_to_date(pv, mo), "mtd_bench": _ret_to_date(bench, mo),
+        "benchmark_symbol": BENCHMARK_SYMBOL,
+    }
 
 
 def compute_positions(tx: pd.DataFrame) -> pd.DataFrame:
