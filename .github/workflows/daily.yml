@@ -2,9 +2,13 @@ name: Daily portfolio snapshot
 
 on:
   schedule:
-    # Weekdays. Times are UTC; ET shifts ~1h with daylight saving.
-    - cron: "5 14 * * 1-5"    # ~10am ET — intraday "open" snapshot
-    - cron: "5 21 * * 1-5"    # ~5pm ET — overwrites the day's row with the close
+    # Weekdays. GitHub cron is UTC and DST-blind, so the 9:35am-ET "open" needs
+    # two entries — one for EDT (summer) and one for EST (winter). snapshot.py
+    # keys off $SCHEDULE_CRON and runs only the one matching the current ET
+    # offset, skipping the other.
+    - cron: "35 13 * * 1-5"   # 9:35am ET during EDT (summer) — "open"
+    - cron: "35 14 * * 1-5"   # 9:35am ET during EST (winter) — "open"
+    - cron: "5 21 * * 1-5"    # ~4–5pm ET — overwrites the day's row with the close
   workflow_dispatch:        # lets you trigger it by hand from the Actions tab
 
 jobs:
@@ -19,4 +23,5 @@ jobs:
       - name: Record snapshot
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SCHEDULE_CRON: ${{ github.event.schedule }}   # empty on manual dispatch
         run: python jobs/snapshot.py
