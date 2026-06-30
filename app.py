@@ -139,6 +139,12 @@ def load_period_returns(sig):
     return portfolio.period_returns(db.get_transactions_df(), db.get_instruments_df())
 
 
+@st.cache_data(ttl=3600)
+def load_attribution(sig, period):
+    return portfolio.return_attribution(db.get_transactions_df(),
+                                        db.get_instruments_df(), period)
+
+
 HIDE = False          # set in the main flow; when True, dollar amounts are masked
 GUEST = False
 MASK = "$ •••••"
@@ -469,10 +475,10 @@ def render_overview():
                       fmt_money0(l_open) if pd.notna(l_open) else "—")
             o2.metric(f"Latest close · {as_of}",
                       fmt_money0(l_close) if pd.notna(l_close) else "—")
-            st.caption("Open (mid-morning) and Close (end of day) recorded each weekday; "
-                       "weekly/monthly views use the close. History fills in as it accrues.")
+            st.caption("Open and close values are recorded each trading day; weekly and "
+                       "monthly views reflect period-end closes.")
         else:
-            st.info("No snapshots yet — they appear once the daily job runs.")
+            st.info("Performance history will populate once the daily snapshot job has run.")
     with c2:
         st.subheader("Currency Exposure")
         if not pos.empty:
@@ -487,8 +493,35 @@ def render_overview():
                 text=f"{cur.get('USD', 0.0) / cur.sum():.0%} USD", x=.5, y=.5,
                 font=dict(family=SERIF, size=15, color="#F4F4F4"), showarrow=False)])
             show(style_fig(fig, 360, legend=False))
-            st.caption("By trading currency, except unhedged XUS is counted as USD "
-                       "(it holds the S&P 500 though it trades in CAD).")
+            st.caption("Classified by trading currency. XUS is treated as USD exposure: "
+                       "it holds the unhedged S&P 500 despite trading in CAD.")
+
+    # ---- Return attribution -------------------------------------------------
+    st.subheader("Return Attribution")
+    ap = st.segmented_control(
+        "Period", ["WTD", "MTD", "3M", "1Y", "3Y"], default="MTD",
+        label_visibility="collapsed", key="attrib_period") or "MTD"
+    attr = load_attribution(holdings_sig(), ap)
+    if not attr["rows"]:
+        st.info("Attribution will appear once price history is available for the holdings.")
+    else:
+        rows = attr["rows"]
+        contrib = [r["contribution"] for r in rows]
+        fig = go.Figure(go.Bar(
+            x=contrib, y=[r["ticker"] for r in rows], orientation="h",
+            marker_color=[POS if c >= 0 else NEG for c in contrib],
+            text=[f"{c:+.2%}" for c in contrib], textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{y}: %{x:.2%} contribution<extra></extra>"))
+        fig = style_fig(fig, 340, legend=False)
+        fig.update_xaxes(title="Contribution to portfolio return", tickformat=".1%")
+        fig.update_yaxes(autorange="reversed")          # largest contributor on top
+        show(fig)
+        st.caption(
+            f"Portfolio {ap} return of {attr['port_return']:+.2%}, decomposed into each "
+            "holding's contribution (beginning weight × period return, in CAD). "
+            "Contributions sum to the total. Based on current holdings and current FX; "
+            "OPO is excluded (no market data).")
 
 
 def render_accounts():
@@ -641,7 +674,7 @@ def render_benchmarks():
 
     perf = perf_all(period)
     if perf.empty:
-        st.warning("Couldn't load price history (offline?). Try again shortly.")
+        st.warning("Price history is currently unavailable. Please retry shortly.")
         return
     fig = go.Figure()
     for sym, name in name_by_sym.items():
@@ -662,19 +695,20 @@ def render_benchmarks():
     fig.update_yaxes(title="Growth of $100")
     fig.update_xaxes(type="date", tickformat="%b %Y")
     show(fig)
-    st.caption("Each line rebased to 100 at the period start — relative price "
-               "performance (no balances shown). Portfolio = your current holdings "
-               "backtested on price history (OPO excluded, no market data). "
-               "Toggle Portfolio / Total Market (VT) / S&P 500 (^GSPC) above.")
+    st.caption("Indexed to 100 at the period start; relative price performance only. "
+               "Portfolio reflects current holdings backtested on price history "
+               "(OPO excluded — no market data). Benchmarks: Total Market (VT) and "
+               "S&P 500 (^GSPC).")
 
 
 def render_factor():
     st.subheader("Factor Exposure")
-    st.caption("Returns-based Fama-French 5 + momentum loadings, MV-weighted across holdings.")
+    st.caption("Returns-based Fama-French five-factor plus momentum loadings, "
+               "market-value-weighted across holdings.")
     try:
         fx = load_factors(holdings_sig())
     except Exception as e:
-        st.warning(f"Couldn't load factor data (offline or source unavailable): {e}")
+        st.warning(f"Factor data is currently unavailable: {e}")
         return
     if not fx:
         return
@@ -688,7 +722,7 @@ def render_factor():
     fig.update_yaxes(title="Loading (β)")
     show(fig)
     if fx["unattributed"] > 0.001:
-        st.caption(f"Loadings cover the market-holding sleeve; {fx['unattributed']:.0%} of the "
+        st.caption(f"Loadings cover the marketable sleeve; {fx['unattributed']:.0%} of the "
                    "portfolio (OPO, private) has no return history and is excluded.")
     rows = []
     for tk, d in fx["per_fund"].items():
@@ -702,22 +736,23 @@ def render_factor():
          **{f: "{:+.2f}" for f in fx["factors"]}}),
         width="stretch", hide_index=True)
     st.caption(f"Factor window {fx['window'][0]}–{fx['window'][1]} (Developed factors, monthly). "
-               "CAD-listed funds show market β below 1.0 partly from CAD-vs-USD drift against the "
-               "USD factor set; AVGE (USD) carries the value (HML)/profitability tilts of its "
-               "Avantis design. Funds under ~2 years old have noisier estimates. Updated daily.")
+               "CAD-listed funds show market β below 1.0 partly owing to CAD/USD drift against "
+               "the USD-denominated factor set; AVGE (USD) carries the value (HML) and "
+               "profitability tilts of its Avantis design. Estimates for funds under two years "
+               "old are less reliable. Updated daily.")
 
 
 def render_correlations():
     st.subheader("Correlation of Daily Returns (~1Y)")
     corr = load_corr(holdings_sig())
     if corr.empty:
-        st.warning("Couldn't load price history (offline?). Try again shortly.")
+        st.warning("Price history is currently unavailable. Please retry shortly.")
         return
     fig = px.imshow(corr, text_auto=".2f", color_continuous_scale="RdBu",
                     zmin=-1, zmax=1, aspect="auto")
     show(style_fig(fig, 440, legend=False))
-    st.caption("1.0 = move together · 0 = unrelated · negative = move opposite. "
-               "Private holdings (OPO) are excluded — no market data.")
+    st.caption("1.0 = perfectly correlated · 0 = uncorrelated · negative = inversely "
+               "correlated. OPO (private) is excluded — no market data.")
 
 
 def render_lookthrough():
@@ -733,11 +768,11 @@ def render_lookthrough():
     reg, sty = lt["region"], lt["style"]
     tilt = 1 - sty.get("Market", 0.0)
     st.caption(
-        "Your equity sleeve (OPO excluded), seen through to the underlying funds — "
-        f"**{reg.get('US', 0):.0%} US · {reg.get('Intl Dev', 0):.0%} Intl · "
-        f"{reg.get('EM', 0):.0%} EM · {reg.get('Canada', 0):.0%} Canada**, and only "
-        f"**{tilt:.0%} factor-tilted** (value/small) vs plain market-cap — because AVGE "
-        "is a small slice and is itself mostly US market.")
+        "The equity sleeve (OPO excluded), seen through to its underlying funds: "
+        f"**{reg.get('US', 0):.0%} US · {reg.get('Intl Dev', 0):.0%} Intl Developed · "
+        f"{reg.get('EM', 0):.0%} EM · {reg.get('Canada', 0):.0%} Canada**. Only "
+        f"**{tilt:.0%}** is factor-tilted (value/small) versus market-cap weighting, as the "
+        "Avantis allocation (AVGE) is a small and predominantly US-market position.")
 
     c1, c2 = st.columns(2)
     with c1:
@@ -762,8 +797,8 @@ def render_lookthrough():
     bdf = pd.DataFrame([{"Building block": b, "Weight": w}
                         for b, w in sorted(lt["blocks"].items(), key=lambda x: -x[1])])
     st.dataframe(bdf.style.format({"Weight": "{:.1%}"}), width="stretch", hide_index=True)
-    st.caption("AVGE decomposed into its 10 Avantis sleeves (renormalized to 100%); XEQT "
-               "into iShares regional weights (approx.); XUS as US large-cap.")
+    st.caption("AVGE is decomposed into its ten Avantis sleeves (renormalized to 100%); "
+               "XEQT into iShares regional weights (approximate); XUS as US large-cap.")
 
     # ---- Phase 2: optimized target & gaps -------------------------------
     st.divider()
@@ -775,10 +810,10 @@ def render_lookthrough():
     try:
         o = load_optim("5y")
     except Exception as e:
-        st.warning(f"Optimizer unavailable — {type(e).__name__}: {e}")
+        st.warning(f"Optimizer is currently unavailable ({type(e).__name__}: {e}).")
         return
     if not o:
-        st.warning("Couldn't load optimizer data (offline?). Try again shortly.")
+        st.warning("Optimizer data is currently unavailable. Please retry shortly.")
         return
     key = {"Min-Variance": "minvar", "Risk Parity (inv-vol)": "invvol",
            "Equal Weight": "equal"}[method]
@@ -808,18 +843,18 @@ def render_lookthrough():
     add_txt = ", ".join(f"**{i}** (+{comp.loc[i, 'Gap']:.0%})" for i in under.index[:4])
     trim_txt = ", ".join(f"**{i}** ({comp.loc[i, 'Gap']:.0%})" for i in over.index[:2])
     if add_txt:
-        flag("warn", f"To reach the {method.lower()} target, **add**: {add_txt}"
-             + (f" · **trim**: {trim_txt}" if trim_txt else "")
-             + ". These are value / small / international sleeves you hold ~none of today.")
+        flag("warn", f"{method} target versus current — **increase**: {add_txt}"
+             + (f"; **reduce**: {trim_txt}" if trim_txt else "")
+             + ". The underweights are value, small-cap, and international sleeves "
+               "carrying negligible current exposure.")
     st.caption(
-        f"Target over AVGE's 10 Avantis sleeves; covariance from {o['cov_months']} months "
-        "(shrunk). Canada "
-        f"({canada:.0%}) is excluded — no Avantis sleeve, so it sits outside this factor "
-        "framework. **Implementation:** you can't close these gaps with XEQT/XUS/AVGE alone "
-        "(all market-cap) — materially tilting toward value/small/intl means holding the "
-        "Avantis sleeves directly. That's the §6 strategic decision. Min-Variance concentrates "
-        "in low-vol/diversifying sleeves; Risk Parity spreads by inverse-vol; Equal Weight is "
-        "the naive baseline.")
+        f"Target weights over AVGE's ten Avantis sleeves; covariance estimated over "
+        f"{o['cov_months']} months with shrinkage. Canada ({canada:.0%}) is excluded — no "
+        "corresponding Avantis sleeve. Implementation: these tilts cannot be achieved through "
+        "XEQT, XUS, or AVGE alone (all market-cap weighted); a material value, small-cap, or "
+        "international tilt requires holding the Avantis sleeves directly — the §6 strategic "
+        "question. Min-Variance concentrates in low-volatility, diversifying sleeves; Risk "
+        "Parity weights by inverse volatility; Equal Weight is the unweighted reference.")
 
 
 def render_leverage():

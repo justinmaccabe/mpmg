@@ -48,6 +48,72 @@ def period_returns(tx, instruments) -> dict:
     }
 
 
+# Price-history window fetched for each attribution period.
+ATTRIB_FETCH = {"WTD": "1mo", "MTD": "3mo", "3M": "6mo", "1Y": "1y", "3Y": "3y"}
+
+
+def return_attribution(tx, instruments, period="MTD") -> dict:
+    """Decompose the portfolio's period price return into per-holding
+    contributions (CAD): contribution_i = beginning weight_i x return_i, which
+    sum to the total. Uses current share counts and current FX (consistent with
+    the performance chart); private holdings (OPO) are excluded — no history.
+    """
+    pos = compute_positions(tx)
+    inst = instruments.set_index("ticker")
+    usd_cad = pricelib.get_usd_cad()
+    legs = []  # (ticker, yf_symbol, shares, fx)
+    for _, p in pos.iterrows():
+        t = p["ticker"]
+        if t not in inst.index or p["shares"] == 0:
+            continue
+        meta = inst.loc[t]
+        if meta["is_private"] or not meta["yf_symbol"]:
+            continue
+        legs.append((t, meta["yf_symbol"], float(p["shares"]),
+                     usd_cad if meta["currency"] == "USD" else 1.0))
+    empty = {"rows": [], "port_return": None, "gain_total": None, "period": period}
+    if not legs:
+        return empty
+    hist = pricelib.get_history([s for _, s, _, _ in legs],
+                                period=ATTRIB_FETCH.get(period, "1y"))
+    if hist.empty:
+        return empty
+
+    today = dt.date.today()
+    cut = None
+    if period == "WTD":
+        cut = pd.Timestamp(today - dt.timedelta(days=today.weekday()))   # this Monday
+    elif period == "MTD":
+        cut = pd.Timestamp(today.replace(day=1))                         # 1st of month
+
+    rows, begin_total, end_total = [], 0.0, 0.0
+    for t, sym, shares, fx in legs:
+        if sym not in hist.columns:
+            continue
+        s = hist[sym].dropna()
+        if s.empty:
+            continue
+        if cut is not None:
+            base = s[s.index < cut]
+            p_begin = float(base.iloc[-1]) if not base.empty else float(s.iloc[0])
+        else:
+            p_begin = float(s.iloc[0])
+        p_end = float(s.iloc[-1])
+        bv, ev = shares * p_begin * fx, shares * p_end * fx
+        begin_total += bv
+        end_total += ev
+        rows.append({"ticker": t, "begin_value": bv, "end_value": ev,
+                     "gain": ev - bv, "ret": (p_end / p_begin - 1) if p_begin else 0.0})
+    if begin_total <= 0:
+        return empty
+    for r in rows:
+        r["weight"] = r["begin_value"] / begin_total
+        r["contribution"] = r["gain"] / begin_total      # to portfolio return
+    rows.sort(key=lambda r: r["contribution"], reverse=True)
+    return {"rows": rows, "gain_total": end_total - begin_total,
+            "port_return": (end_total - begin_total) / begin_total, "period": period}
+
+
 def compute_positions(tx: pd.DataFrame) -> pd.DataFrame:
     """Net shares (total + per account) and average cost (ACB) per ticker."""
     if tx.empty:
