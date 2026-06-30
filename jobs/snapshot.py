@@ -18,26 +18,35 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 ET = ZoneInfo("America/New_York")
-OPEN_CRON_HOURS = {13, 14}          # the EDT/EST UTC variants of the 9:35 ET open
+OPEN_CRON_HOURS = {13, 14}          # EDT/EST UTC variants of the 9:35am ET open
+CLOSE_CRON_HOURS = {20, 21}         # EDT/EST UTC variants of the 4:05pm ET close
+
+
+def _utc_hour_for_et(hour, minute):
+    """UTC hour at which the given ET wall-clock time falls today (DST-aware)."""
+    return (dt.datetime.now(ET).replace(hour=hour, minute=minute, second=0, microsecond=0)
+            .astimezone(dt.timezone.utc).hour)
 
 
 def _resolve_slot():
     """Return 'open', 'close', or None (skip) for this invocation.
 
-    Scheduled runs are classified by the cron that fired ($SCHEDULE_CRON): the
-    DST-correct open cron → 'open', the wrong-DST open cron → None (skip), any
-    other cron → 'close'. Manual runs (no cron) are classified by ET hour.
+    Scheduled runs are classified by the cron that fired ($SCHEDULE_CRON): each
+    ET target (9:35am open, 4:05pm close) has an EDT and an EST cron, and only
+    the one matching the current ET offset proceeds — the other returns None
+    (skip). Keying off the scheduled cron rather than the actual run time keeps
+    GitHub's scheduling delays from misclassifying a run. Manual runs (no cron)
+    are classified by ET hour.
     """
     cron = os.environ.get("SCHEDULE_CRON", "").strip()
     if not cron:
         return "open" if dt.datetime.now(ET).hour < 12 else "close"
     cron_hour = int(cron.split()[1])
     if cron_hour in OPEN_CRON_HOURS:
-        # UTC hour at which 9:35 ET falls today, given the current DST offset
-        want = (dt.datetime.now(ET).replace(hour=9, minute=35, second=0, microsecond=0)
-                .astimezone(dt.timezone.utc).hour)
-        return "open" if cron_hour == want else None
-    return "close"
+        return "open" if cron_hour == _utc_hour_for_et(9, 35) else None
+    if cron_hour in CLOSE_CRON_HOURS:
+        return "close" if cron_hour == _utc_hour_for_et(16, 5) else None
+    return None
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
