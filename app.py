@@ -461,6 +461,14 @@ def render_overview():
                 fig.update_yaxes(showticklabels=False, title=None)
                 fig.update_traces(hoverinfo="skip", hovertemplate=None)
             show(fig)
+            last = snaps.sort_values("date").iloc[-1]
+            l_open, l_close = last.get("market_value_open"), last.get("market_value")
+            as_of = pd.to_datetime(last["date"]).strftime("%b %d, %Y")
+            o1, o2 = st.columns(2)
+            o1.metric(f"Latest open · {as_of}",
+                      fmt_money0(l_open) if pd.notna(l_open) else "—")
+            o2.metric(f"Latest close · {as_of}",
+                      fmt_money0(l_close) if pd.notna(l_close) else "—")
             st.caption("Open (mid-morning) and Close (end of day) recorded each weekday; "
                        "weekly/monthly views use the close. History fills in as it accrues.")
         else:
@@ -855,11 +863,15 @@ def render_leverage():
         mdd = portfolio.max_drawdown(pp) if not pp.empty else None
     except Exception:
         mdd = None
-    d1, d2, d3, d4 = st.columns(4)
+    # actual experienced drawdown — worst peak-to-trough of the recorded
+    # close-value snapshot history (vs the 3Y backtest of current holdings)
+    exp_mdd = portfolio.max_drawdown(snaps["market_value"].dropna()) if len(snaps) else None
+    d1, d2, d3, d4, d5 = st.columns(5)
     d1.metric("Annual interest", money(lev["annual_interest"]))
     d2.metric("Monthly interest", money(lev["monthly_interest"]))
     d3.metric("Drawdown from peak", f"{lev['drawdown']:.1%}")
-    d4.metric("Max drawdown (3Y)", f"{mdd:.1%}" if mdd is not None else "—")
+    d4.metric("Max drawdown (recorded)", f"{exp_mdd:.1%}" if exp_mdd is not None else "—")
+    d5.metric("Max drawdown (3Y, modeled)", f"{mdd:.1%}" if mdd is not None else "—")
     e1, e2, e3 = st.columns(3)
     e1.metric("Est. portfolio yield", f"{yld_pct:.2f}%")
     p_sh, b_sh = sh.get("portfolio"), sh.get("benchmark")
