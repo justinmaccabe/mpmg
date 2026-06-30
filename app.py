@@ -468,14 +468,17 @@ def render_overview():
                 fig.update_yaxes(showticklabels=False, title=None)
                 fig.update_traces(hoverinfo="skip", hovertemplate=None)
             show(fig)
-            last = snaps.sort_values("date").iloc[-1]
-            l_open, l_close = last.get("market_value_open"), last.get("market_value")
-            as_of = pd.to_datetime(last["date"]).strftime("%b %d, %Y")
+            ss = snaps.sort_values("date")
             o1, o2 = st.columns(2)
-            o1.metric(f"Latest open · {as_of}",
-                      fmt_money0(l_open) if pd.notna(l_open) else "—")
-            o2.metric(f"Latest close · {as_of}",
-                      fmt_money0(l_close) if pd.notna(l_close) else "—")
+            for col, field, lbl in ((o1, "market_value_open", "Latest open"),
+                                     (o2, "market_value", "Latest close")):
+                rows_v = ss[ss[field].notna()]
+                if len(rows_v):
+                    r = rows_v.iloc[-1]
+                    col.metric(f"{lbl} · {pd.to_datetime(r['date']):%b %d, %Y}",
+                               fmt_money0(r[field]))
+                else:
+                    col.metric(lbl, "—")
             st.caption("Open and close values are recorded each trading day; weekly and "
                        "monthly views reflect period-end closes.")
         else:

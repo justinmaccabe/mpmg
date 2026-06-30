@@ -86,7 +86,7 @@ def main():
     prev = _today_row()
 
     if is_open:
-        mv_open, mv_close = mv, mv                # close placeholder until the close run
+        mv_open, mv_close = mv, None              # close stays empty until the close run
     else:
         mv_close = mv
         prev_open = None if prev is None else prev.get("market_value_open")
@@ -104,8 +104,8 @@ def main():
         "benchmark_pct": portfolio.benchmark_daily_pct(),
     }
     db.upsert_snapshot(row)
-    print(f"Recorded {row['date']} ({'open' if is_open else 'close'}): "
-          f"open={mv_open:.2f} close={mv_close:.2f}")
+    close_str = "pending" if mv_close is None else f"{mv_close:.2f}"
+    print(f"Recorded {row['date']} ({slot}): open={mv_open:.2f} close={close_str}")
 
 
 if __name__ == "__main__":
