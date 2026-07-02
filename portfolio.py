@@ -23,10 +23,19 @@ def max_drawdown(series) -> float:
 
 
 def _ret_to_date(series, since) -> float:
-    """Return from the last close strictly before `since` to the latest value."""
+    """Return from the last close strictly before `since` to the latest value.
+
+    Requires at least one price on/after `since` — some feeds (e.g. TSX-listed
+    tickers on yfinance) lag a day behind, and without this check a stale
+    "latest" price equal to the pre-cutoff price would misreport as a 0% return
+    instead of "no fresh data yet".
+    """
     if series is None or len(series) == 0:
         return None
-    base = series[series.index < pd.Timestamp(since)]
+    since_ts = pd.Timestamp(since)
+    if series.index[-1] < since_ts:
+        return None
+    base = series[series.index < since_ts]
     if base.empty:
         return None
     return float(series.iloc[-1] / base.iloc[-1] - 1)
@@ -78,6 +87,14 @@ def return_attribution(tx, instruments, period="MTD") -> dict:
                                 period=ATTRIB_FETCH.get(period, "1y"))
     if hist.empty:
         return empty
+    # Align every leg to dates where ALL of them have a price (some feeds, e.g.
+    # TSX-listed tickers on yfinance, lag a day behind US-listed ones) — so
+    # every holding's "as of" price is the same date, not a mix of stale and
+    # fresh closes that would make one leg look flat next to another's real move.
+    cols = [s for _, s, _, _ in legs if s in hist.columns]
+    hist = hist[cols].dropna()
+    if hist.empty:
+        return empty
 
     today = dt.date.today()
     cut = None
@@ -90,7 +107,7 @@ def return_attribution(tx, instruments, period="MTD") -> dict:
     for t, sym, shares, fx in legs:
         if sym not in hist.columns:
             continue
-        s = hist[sym].dropna()
+        s = hist[sym]
         if s.empty:
             continue
         if cut is not None:

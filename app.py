@@ -65,7 +65,9 @@ html, body, [class*="css"], .stApp, h1, h2, h3, h4, h5, p, div, span,
 [data-testid="stMetric"] {{ background:rgba(255,255,255,.025);
     border:1px solid rgba(201,162,39,.18); border-radius:10px; padding:14px 18px; }}
 [data-testid="stMetricLabel"] {{ color:#9AA0AB !important; text-transform:uppercase;
-    letter-spacing:.12em; font-size:.72rem !important; }}
+    letter-spacing:.12em; font-size:.72rem !important; min-height:2.1em; }}
+[data-testid="stMetricLabel"] p {{ white-space:normal !important; overflow:visible !important;
+    text-overflow:unset !important; line-height:1.3 !important; }}
 [data-testid="stMetricValue"] {{ font-size:1.7rem !important; color:#F4F4F4; }}
 
 h2, h3 {{ color:#EDEDED; border-left:3px solid {GOLD}; padding-left:.55rem; }}
@@ -445,11 +447,11 @@ def render_overview():
                               mode="markers", name="Open",
                               marker=dict(size=9, color="#8FB3D9", symbol="circle-open")))
             fig.add_trace(go.Scatter(x=s["_lbl"], y=s["market_value"],
-                          mode="lines+markers", name="Close",
+                          mode="lines+markers", name="Close", connectgaps=True,
                           line=dict(color=BLUE, width=2), marker=dict(size=8)))
             if s["book_value"].notna().any():
                 fig.add_trace(go.Scatter(x=s["_lbl"], y=s["book_value"],
-                              mode="lines+markers", name="Book Value",
+                              mode="lines+markers", name="Book Value", connectgaps=True,
                               line=dict(color=GOLD, width=1.5, dash="dot"),
                               marker=dict(size=7)))
             fig = style_fig(fig, 340)
