@@ -946,18 +946,6 @@ def render_lookthrough():
     st.dataframe(comp.style.format("{:.1%}").map(color_pnl, subset=["Gap"]),
                  width="stretch")
 
-    under = comp[comp["Gap"] > 0.03].sort_values("Gap", ascending=False)
-    over = comp[comp["Gap"] < -0.03].sort_values("Gap")
-    add_txt = ", ".join(f"**{i}** (+{comp.loc[i, 'Gap']:.0%})" for i in under.index[:4])
-    trim_txt = ", ".join(f"**{i}** (−{abs(comp.loc[i, 'Gap']):.0%})" for i in over.index[:2])
-    if add_txt:
-        note = (f"To move toward the {method} target, the model would add to {add_txt}")
-        if trim_txt:
-            note += f" and reduce {trim_txt}"
-        note += (". These are reference weights rather than a mandate: expressing the tilt "
-                 "means holding the Avantis sleeves directly instead of through AVGE — the "
-                 "§6 strategic question.")
-        flag("info", note)
     if method == "Black-Litterman (AQR)":
         st.caption(
             f"Full opportunity set. Market-cap prior blended with AQR 2026 capital-market "
@@ -967,7 +955,9 @@ def render_lookthrough():
             f"{o['cov_months']} months with Ledoit-Wolf shrinkage. AVUS/AVDE/AVEM carry "
             "broad regional beta; the rest are factor tilts. At 0% confidence the target "
             "reproduces the market-cap anchor; raising it lets AQR's return views (US "
-            "expensive, international cheaper) pull weight across regions and into value.")
+            "expensive, international cheaper) pull weight across regions and into value. "
+            "These are reference weights, not a mandate — expressing the tilt means holding "
+            "the Avantis sleeves directly rather than through AVGE (the §6 question).")
     else:
         st.caption(
             f"Risk-based reference over AVGE's ten Avantis sleeves; covariance over "
