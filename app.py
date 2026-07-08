@@ -984,6 +984,26 @@ def render_trade():
             st.session_state["opo_skip"] = False
             opo_buy_dialog(ym)
 
+        priv = inst[inst["is_private"].astype(bool)]
+        if not priv.empty:
+            st.subheader("Private Holdings — Update Mark")
+            st.caption("Privates aren't covered by the market feed. Enter the latest "
+                       "valuation whenever your manager publishes one — it drives market "
+                       "value and performance until you update it again.")
+            pmap = priv.set_index("ticker")["manual_price"].to_dict()
+            pc = st.columns([2, 2, 1])
+            pt = pc[0].selectbox("Holding", list(pmap), key="priv_tkr")
+            newp = pc[1].number_input(
+                f"Current price / unit  ·  now ${float(pmap[pt] or 0):,.4f}",
+                min_value=0.0, value=float(pmap[pt] or 0), step=0.0001,
+                format="%.4f", key=f"priv_px_{pt}")
+            pc[2].markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
+            if pc[2].button("Update mark", type="primary"):
+                db.set_manual_price(pt, newp)
+                st.cache_data.clear()
+                st.success(f"{pt} marked at ${newp:,.4f}.")
+                st.rerun()
+
         st.subheader("Log a Transaction")
         with st.form("trade", clear_on_submit=True):
             col = st.columns(3)
