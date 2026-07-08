@@ -855,20 +855,23 @@ def render_lookthrough():
     bdf = pd.DataFrame([{"Building block": b,
                          "Factor": BLOCK_FACTOR.get(b, "—"),
                          "Weight": w,
-                         "Mkt-cap truth": MKT_CAP_TRUTH.get(b, 0.0),
-                         "Δ vs truth": w - MKT_CAP_TRUTH.get(b, 0.0)}
+                         "Target": MKT_CAP_TRUTH.get(b, 0.0),
+                         "Δ vs target": w - MKT_CAP_TRUTH.get(b, 0.0)}
                         for b, w in sorted(lt["blocks"].items(), key=lambda x: -x[1])])
     st.dataframe(
-        bdf.style.format({"Weight": "{:.1%}", "Mkt-cap truth": "{:.1%}",
-                          "Δ vs truth": "{:+.1%}"}),
+        bdf.style.format({"Weight": "{:.1%}", "Target": "{:.1%}",
+                          "Δ vs target": "{:+.1%}"}),
         width="stretch", hide_index=True)
     st.caption("AVGE is decomposed into its ten Avantis sleeves (renormalized to 100%); "
                "XEQT into iShares regional weights (approximate); XUS as US large-cap.")
-    st.caption("**Mkt-cap truth** = each block's weight in the global market-cap portfolio "
-               "(≈MSCI ACWI: US 63%, Intl Developed 24%, EM 10%, Canada 3%) — the "
-               "forecast-free Black-Litterman prior per IPS §6. It carries regional beta in "
-               "the broad blocks, so the Avantis factor sleeves sit at 0%: that weight is a "
-               "deliberate tilt. **Δ vs truth** is your active bet (＋ overweight / − under).")
+    st.caption("**Target** here is the market-cap anchor — each block's weight in the global "
+               "market-cap portfolio (≈MSCI ACWI: US 63%, Intl Developed 24%, EM 10%, "
+               "Canada 3%), i.e. the Black-Litterman prior with no return views (IPS §6). "
+               "Broad US/Intl/EM beta is routed through the broad blocks, so the Avantis "
+               "sleeves read 0% — that reflects zero *factor tilt* under a no-views anchor, "
+               "not the absence of those stocks (their beta is counted in the broad rows). "
+               "A return-aware target (AQR capital-market expectations → Black-Litterman) "
+               "would give the sleeves positive weight. **Δ vs target** is your active bet.")
 
     # ---- Phase 2: optimized target & gaps -------------------------------
     st.divider()
