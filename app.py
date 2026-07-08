@@ -804,6 +804,14 @@ BLOCK_FACTOR = {
     "Intl Dev Market": "Intl Developed", "EM Market": "Emerging Markets",
 }
 
+# Global market-cap weights (~MSCI ACWI) — the forecast-free "truth" anchor and
+# Black-Litterman prior per IPS §6. The market portfolio expresses regional beta
+# through the broad blocks, so dedicated factor sleeves sit at 0: their weight is
+# a deliberate tilt, not part of the cap-weight truth. Approximate; editable.
+MKT_CAP_TRUTH = {
+    "US Market": 0.63, "Intl Dev Market": 0.24, "EM Market": 0.10, "Canada Market": 0.03,
+}
+
 
 def render_lookthrough():
     st.subheader("Portfolio Look-Through")
@@ -845,11 +853,22 @@ def render_lookthrough():
 
     st.markdown("##### Underlying Building Blocks")
     bdf = pd.DataFrame([{"Building block": b,
-                         "Factor": BLOCK_FACTOR.get(b, "—"), "Weight": w}
+                         "Factor": BLOCK_FACTOR.get(b, "—"),
+                         "Weight": w,
+                         "Mkt-cap truth": MKT_CAP_TRUTH.get(b, 0.0),
+                         "Δ vs truth": w - MKT_CAP_TRUTH.get(b, 0.0)}
                         for b, w in sorted(lt["blocks"].items(), key=lambda x: -x[1])])
-    st.dataframe(bdf.style.format({"Weight": "{:.1%}"}), width="stretch", hide_index=True)
+    st.dataframe(
+        bdf.style.format({"Weight": "{:.1%}", "Mkt-cap truth": "{:.1%}",
+                          "Δ vs truth": "{:+.1%}"}),
+        width="stretch", hide_index=True)
     st.caption("AVGE is decomposed into its ten Avantis sleeves (renormalized to 100%); "
                "XEQT into iShares regional weights (approximate); XUS as US large-cap.")
+    st.caption("**Mkt-cap truth** = each block's weight in the global market-cap portfolio "
+               "(≈MSCI ACWI: US 63%, Intl Developed 24%, EM 10%, Canada 3%) — the "
+               "forecast-free Black-Litterman prior per IPS §6. It carries regional beta in "
+               "the broad blocks, so the Avantis factor sleeves sit at 0%: that weight is a "
+               "deliberate tilt. **Δ vs truth** is your active bet (＋ overweight / − under).")
 
     # ---- Phase 2: optimized target & gaps -------------------------------
     st.divider()
