@@ -207,7 +207,7 @@ def show(fig):
 
 def flag(kind, text):
     """Render a themed status flag (kind: 'ok' | 'warn' | 'bad')."""
-    c = {"ok": POS, "warn": GOLD, "bad": NEG}.get(kind, GOLD)
+    c = {"ok": POS, "warn": GOLD, "bad": NEG, "info": BLUE}.get(kind, GOLD)
     st.markdown(
         f"<div style=\"border-left:3px solid {c}; background:{c}14; color:#E8E8E8;"
         f" font-family:{SERIF}; padding:.65rem 1rem; border-radius:6px;"
@@ -911,12 +911,15 @@ def render_lookthrough():
     under = comp[comp["Gap"] > 0.03].sort_values("Gap", ascending=False)
     over = comp[comp["Gap"] < -0.03].sort_values("Gap")
     add_txt = ", ".join(f"**{i}** (+{comp.loc[i, 'Gap']:.0%})" for i in under.index[:4])
-    trim_txt = ", ".join(f"**{i}** ({comp.loc[i, 'Gap']:.0%})" for i in over.index[:2])
+    trim_txt = ", ".join(f"**{i}** (−{abs(comp.loc[i, 'Gap']):.0%})" for i in over.index[:2])
     if add_txt:
-        flag("warn", f"{method} target versus current — **increase**: {add_txt}"
-             + (f"; **reduce**: {trim_txt}" if trim_txt else "")
-             + ". The underweights are value, small-cap, and international sleeves "
-               "carrying negligible current exposure.")
+        note = (f"To move toward the {method} target, the model would add to {add_txt}")
+        if trim_txt:
+            note += f" and reduce {trim_txt}"
+        note += (". These are reference weights rather than a mandate: expressing the tilt "
+                 "means holding the Avantis sleeves directly instead of through AVGE — the "
+                 "§6 strategic question.")
+        flag("info", note)
     st.caption(
         f"Target weights over AVGE's ten Avantis sleeves; covariance estimated over "
         f"{o['cov_months']} months with shrinkage. Canada ({canada:.0%}) is excluded — no "
