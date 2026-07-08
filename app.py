@@ -158,7 +158,15 @@ def money(x):
 
 
 def fmt_money0(v):
+    if pd.isna(v):
+        return "—"
     return MASK if HIDE else f"${v:,.0f}"
+
+
+def fmt_signed(v):
+    if pd.isna(v):
+        return "—"
+    return MASK if HIDE else f"{'+' if v >= 0 else '−'}${abs(v):,.0f}"
 
 
 def logo_html(box, m, w):
@@ -501,6 +509,31 @@ def render_overview():
             show(style_fig(fig, 360, legend=False))
             st.caption("Classified by trading currency. XUS is treated as USD exposure: "
                        "it holds the unhedged S&P 500 despite trading in CAD.")
+
+    # ---- Daily open / close breakdown --------------------------------------
+    _sn = db.get_snapshots_df()
+    if len(_sn) and "market_value_open" in _sn.columns:
+        d = _sn.assign(date=pd.to_datetime(_sn["date"])).sort_values("date")
+        d["prev_close"] = d["market_value"].shift(1)
+        tbl = pd.DataFrame({
+            "Date": d["date"].dt.strftime("%b %d, %Y"),
+            "Open": d["market_value_open"],
+            "Intraday": d["market_value"] - d["market_value_open"],
+            "Close": d["market_value"],
+            "Overnight": d["market_value_open"] - d["prev_close"],
+            "24h Return": d["market_value"] / d["prev_close"] - 1,
+        }).iloc[::-1].reset_index(drop=True)
+        st.subheader("Daily Open & Close")
+        st.dataframe(
+            tbl.style.format({
+                "Open": fmt_money0, "Close": fmt_money0,
+                "Intraday": fmt_signed, "Overnight": fmt_signed,
+                "24h Return": lambda v: "—" if pd.isna(v) else f"{v:+.2%}"},
+                na_rep="—")
+            .map(color_pnl, subset=["Intraday", "Overnight", "24h Return"]),
+            width="stretch", hide_index=True)
+        st.caption("Intraday = close − open · Overnight = open − prior close · "
+                   "24h Return = close vs prior close (overnight + intraday).")
 
     # ---- Return attribution -------------------------------------------------
     st.subheader("Return Attribution")
