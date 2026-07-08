@@ -4,6 +4,7 @@ Run locally:   streamlit run app.py        (uses local SQLite, no setup)
 Deployed:      set DATABASE_URL secret      (uses Postgres so data persists)
 """
 import datetime as dt
+import importlib
 import os
 
 import pandas as pd
@@ -13,6 +14,13 @@ import streamlit as st
 
 import db
 import portfolio
+
+# Streamlit Cloud re-pulls the repo on deploy but can keep a warm Python process,
+# leaving sibling modules stale in sys.modules (app.py re-runs, portfolio.py does
+# not). Reload it when a newly-added symbol is missing so feature additions land
+# without a manual container reboot.
+if not hasattr(portfolio, "black_litterman_target"):
+    importlib.reload(portfolio)
 
 st.set_page_config(page_title="Maccabe Portfolio Management Group",
                    page_icon="◆", layout="wide")
