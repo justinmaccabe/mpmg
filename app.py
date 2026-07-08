@@ -137,6 +137,11 @@ def load_optim(period):
     return portfolio.optimize_blocks(period)
 
 
+@st.cache_data(ttl=86400)
+def load_bl(period, confidence):
+    return portfolio.black_litterman_target(period, confidence)
+
+
 @st.cache_data(ttl=3600)
 def load_period_returns(sig):
     return portfolio.period_returns(db.get_transactions_df(), db.get_instruments_df())
@@ -852,11 +857,23 @@ def render_lookthrough():
         show(fig)
 
     st.markdown("##### Underlying Building Blocks")
+    _conf = st.session_state.get("bl_conf", 35) / 100.0
+    try:
+        _bl = load_bl("5y", _conf)
+    except Exception:
+        _bl = None
+    if _bl:
+        _m = {"AVUS": "US Market", "AVDE": "Intl Dev Market", "AVEM": "EM Market"}
+        tgt = {}
+        for lbl, wt in _bl["target"].items():
+            tgt[_m.get(lbl, lbl)] = tgt.get(_m.get(lbl, lbl), 0.0) + float(wt)
+    else:
+        tgt = dict(MKT_CAP_TRUTH)                       # fall back to the market-cap anchor
     bdf = pd.DataFrame([{"Building block": b,
                          "Factor": BLOCK_FACTOR.get(b, "—"),
                          "Weight": w,
-                         "Target": MKT_CAP_TRUTH.get(b, 0.0),
-                         "Δ vs target": w - MKT_CAP_TRUTH.get(b, 0.0)}
+                         "Target": tgt.get(b, 0.0),
+                         "Δ vs target": w - tgt.get(b, 0.0)}
                         for b, w in sorted(lt["blocks"].items(), key=lambda x: -x[1])])
     st.dataframe(
         bdf.style.format({"Weight": "{:.1%}", "Target": "{:.1%}",
@@ -864,37 +881,55 @@ def render_lookthrough():
         width="stretch", hide_index=True)
     st.caption("AVGE is decomposed into its ten Avantis sleeves (renormalized to 100%); "
                "XEQT into iShares regional weights (approximate); XUS as US large-cap.")
-    st.caption("**Target** here is the market-cap anchor — each block's weight in the global "
-               "market-cap portfolio (≈MSCI ACWI: US 63%, Intl Developed 24%, EM 10%, "
-               "Canada 3%), i.e. the Black-Litterman prior with no return views (IPS §6). "
-               "Broad US/Intl/EM beta is routed through the broad blocks, so the Avantis "
-               "sleeves read 0% — that reflects zero *factor tilt* under a no-views anchor, "
-               "not the absence of those stocks (their beta is counted in the broad rows). "
-               "A return-aware target (AQR capital-market expectations → Black-Litterman) "
-               "would give the sleeves positive weight. **Δ vs target** is your active bet.")
+    st.caption(f"**Target** is the Black-Litterman posterior at {int(_conf*100)}% view "
+               "confidence — the market-cap anchor blended with AQR 2026 capital-market "
+               "assumptions (adjust the confidence dial in *Optimized Target & Gaps* below). "
+               "Broad US/Intl/EM beta is carried by the market rows, so AVUS/AVDE/AVEM read "
+               "~0% (they duplicate that beta); the value, small-cap, real-estate, and "
+               "international-value sleeves now carry positive targets. **Δ vs target** is "
+               "your active bet.")
 
     # ---- Phase 2: optimized target & gaps -------------------------------
     st.divider()
     st.subheader("Optimized Target & Gaps (§6)")
     method = st.segmented_control(
-        "Method", ["Min-Variance", "Risk Parity (inv-vol)", "Equal Weight"],
-        default="Min-Variance", label_visibility="collapsed", key="opt_method") \
-        or "Min-Variance"
-    try:
-        o = load_optim("5y")
-    except Exception as e:
-        st.warning(f"Optimizer is currently unavailable ({type(e).__name__}: {e}).")
-        return
-    if not o:
-        st.warning("Optimizer data is currently unavailable. Please retry shortly.")
-        return
-    key = {"Min-Variance": "minvar", "Risk Parity (inv-vol)": "invvol",
-           "Equal Weight": "equal"}[method]
-    target = o[key]
+        "Method", ["Black-Litterman (AQR)", "Min-Variance",
+                   "Risk Parity (inv-vol)", "Equal Weight"],
+        default="Black-Litterman (AQR)", label_visibility="collapsed",
+        key="opt_method") or "Black-Litterman (AQR)"
 
-    cur = portfolio.current_block_weights(pos, db.get_instruments_df())
-    canada = cur.pop("Canada Market", 0.0)
-    cur_s = pd.Series({a: cur.get(a, 0.0) for a in o["assets"]}, dtype=float)
+    cur_full = portfolio.current_block_weights(pos, db.get_instruments_df())
+    canada = cur_full.get("Canada Market", 0.0)
+
+    if method == "Black-Litterman (AQR)":
+        conf = st.slider(
+            "AQR view confidence", 0, 100, 35, step=5, key="bl_conf",
+            help="0% = market-cap anchor (no views); 100% = AQR capital-market "
+                 "assumptions dominate.")
+        try:
+            o = load_bl("5y", conf / 100.0)
+        except Exception as e:
+            st.warning(f"Optimizer is currently unavailable ({type(e).__name__}: {e}).")
+            return
+        if not o:
+            st.warning("Optimizer data is currently unavailable. Please retry shortly.")
+            return
+        target = o["target"]
+        cur_s = pd.Series({a: cur_full.get(a, 0.0) for a in o["assets"]}, dtype=float)
+    else:
+        try:
+            o = load_optim("5y")
+        except Exception as e:
+            st.warning(f"Optimizer is currently unavailable ({type(e).__name__}: {e}).")
+            return
+        if not o:
+            st.warning("Optimizer data is currently unavailable. Please retry shortly.")
+            return
+        key = {"Min-Variance": "minvar", "Risk Parity (inv-vol)": "invvol",
+               "Equal Weight": "equal"}[method]
+        target = o[key]
+        cur = {k: v for k, v in cur_full.items() if k != "Canada Market"}
+        cur_s = pd.Series({a: cur.get(a, 0.0) for a in o["assets"]}, dtype=float)
     if cur_s.sum() > 0:
         cur_s = cur_s / cur_s.sum()
     comp = pd.DataFrame({"Current": cur_s, "Target": target}).fillna(0.0)
@@ -923,14 +958,24 @@ def render_lookthrough():
                  "means holding the Avantis sleeves directly instead of through AVGE — the "
                  "§6 strategic question.")
         flag("info", note)
-    st.caption(
-        f"Target weights over AVGE's ten Avantis sleeves; covariance estimated over "
-        f"{o['cov_months']} months with shrinkage. Canada ({canada:.0%}) is excluded — no "
-        "corresponding Avantis sleeve. Implementation: these tilts cannot be achieved through "
-        "XEQT, XUS, or AVGE alone (all market-cap weighted); a material value, small-cap, or "
-        "international tilt requires holding the Avantis sleeves directly — the §6 strategic "
-        "question. Min-Variance concentrates in low-volatility, diversifying sleeves; Risk "
-        "Parity weights by inverse volatility; Equal Weight is the unweighted reference.")
+    if method == "Black-Litterman (AQR)":
+        st.caption(
+            f"Full opportunity set. Market-cap prior blended with AQR 2026 capital-market "
+            f"assumptions (medium-term expected real excess-of-cash returns) at "
+            f"{st.session_state.get('bl_conf', 35)}% confidence; factor tilts come from each "
+            f"sleeve's Fama-French 5-factor + momentum loadings, covariance over "
+            f"{o['cov_months']} months with Ledoit-Wolf shrinkage. AVUS/AVDE/AVEM carry "
+            "broad regional beta; the rest are factor tilts. At 0% confidence the target "
+            "reproduces the market-cap anchor; raising it lets AQR's return views (US "
+            "expensive, international cheaper) pull weight across regions and into value.")
+    else:
+        st.caption(
+            f"Risk-based reference over AVGE's ten Avantis sleeves; covariance over "
+            f"{o['cov_months']} months with shrinkage. Canada ({canada:.0%}) is excluded — no "
+            "corresponding Avantis sleeve. None of these three uses expected returns: "
+            "Min-Variance concentrates in low-volatility, diversifying sleeves; Risk Parity "
+            "weights by inverse volatility; Equal Weight is the unweighted reference. For a "
+            "return-aware target over the full opportunity set, use Black-Litterman (AQR).")
 
 
 def render_leverage():

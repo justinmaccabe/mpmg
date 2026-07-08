@@ -548,6 +548,126 @@ def optimize_blocks(period="5y") -> dict:
             "minvar": series(mv), "vol": series(vol), "cov_months": cov_months}
 
 
+# --- Black-Litterman target on the full opportunity set (§6, AQR views) -----
+# AQR 2026 Capital Market Assumptions (Alt Thinking 2026 Issue 1, as of Dec 31
+# 2025). Medium-term (5-10Y) expected LOCAL REAL EXCESS-OF-CASH returns from
+# Exhibit A1; real estate from Exhibit A5. Editable — these are the view inputs.
+AQR_REGION_ER = {"US": 0.026, "Canada": 0.035, "Intl Dev": 0.045, "EM": 0.041}
+AQR_REALESTATE_ER = 0.018            # US real estate real return 3.1% less ~1.3% real cash
+# Per-unit factor premia, calibrated from AQR's stated long-only style premia
+# (value +0.5%, integrated multifactor +1.0%) and the US Small−Large gap (+1.2%).
+AQR_LAMBDA = {"SMB": 0.012, "HML": 0.017, "RMW": 0.010, "Mom": 0.010}
+# Style-based fallback tilt (excess return) when a fund's regression is unavailable.
+_STYLE_FALLBACK = {"Value": 0.005, "Small": 0.012, "Small Value": 0.017,
+                   "Real Estate": 0.0, "Market": 0.0}
+
+# Full opportunity set: (label, price proxy, region, style). Broad regional beta
+# is carried by AVUS/AVDE/AVEM/Canada; the rest are genuine factor tilts.
+BL_UNIVERSE = [
+    ("AVUS", "AVUS", "US", "Market"),
+    ("Canada Market", "XIC.TO", "Canada", "Market"),
+    ("AVDE", "AVDE", "Intl Dev", "Market"),
+    ("AVEM", "AVEM", "EM", "Market"),
+    ("AVLV", "AVLV", "US", "Value"),
+    ("AVUV", "AVUV", "US", "Small Value"),
+    ("AVSC", "AVSC", "US", "Small"),
+    ("AVMV", "AVMV", "US", "Value"),
+    ("AVRE", "AVRE", "US", "Real Estate"),
+    ("AVIV", "AVIV", "Intl Dev", "Value"),
+    ("AVES", "AVES", "EM", "Value"),
+]
+# Market-cap prior weights (the BL anchor): regional beta only, no factor tilt.
+BL_PRIOR = {"AVUS": 0.63, "Canada Market": 0.03, "AVDE": 0.24, "AVEM": 0.10}
+
+
+def _bl_expected_returns(assets, ff, period):
+    """Excess-of-cash expected return per asset: AQR regional base + factor tilt.
+    Tilt uses the fund's FF5+momentum loadings where a regression is available,
+    else a style-based fallback."""
+    er = {}
+    for label, sym, region, style in BL_UNIVERSE:
+        if label not in assets:
+            continue
+        if style == "Real Estate":
+            er[label] = AQR_REALESTATE_ER
+            continue
+        base = AQR_REGION_ER.get(region, 0.03)
+        if style == "Market":
+            er[label] = base
+            continue
+        reg = _regress_fund(sym, ff, period)
+        if reg:
+            tilt = sum(AQR_LAMBDA.get(f, 0.0) * reg["betas"].get(f, 0.0)
+                       for f in AQR_LAMBDA)
+        else:
+            tilt = _STYLE_FALLBACK.get(style, 0.0)
+        er[label] = base + tilt
+    return er
+
+
+def black_litterman_target(period="5y", confidence=0.5) -> dict:
+    """Return-aware target weights over the full opportunity set via Black-
+    Litterman: market-cap prior blended with AQR capital-market-assumption views.
+
+    confidence in [0,1]: 0 collapses to the market-cap prior, 1 lets the AQR
+    views dominate. Long-only, weights sum to 1.
+    """
+    labels = [u[0] for u in BL_UNIVERSE]
+    proxies = {u[0]: u[1] for u in BL_UNIVERSE}
+    hist = pricelib.get_history(list(proxies.values()), period=period)
+    if hist.empty:
+        return {}
+    monthly = hist.resample("ME").last().pct_change(fill_method=None)
+    assets = [l for l in labels if proxies[l] in monthly.columns
+              and int(monthly[proxies[l]].notna().sum()) >= 12]
+    if len(assets) < 3:
+        return {}
+    cols = [proxies[l] for l in assets]
+    arr = monthly[cols].to_numpy(dtype=float)
+    common = arr[~np.isnan(arr).any(axis=1)]
+    n = len(assets)
+    if len(common) < n + 2:
+        return {}
+    cov = np.cov(common, rowvar=False) * 12.0                  # annualized
+    cov = 0.75 * cov + 0.25 * np.diag(np.diag(cov))            # Ledoit-Wolf-style shrink
+
+    pi = np.array([BL_PRIOR.get(l, 0.0) for l in assets])
+    if pi.sum() <= 0:
+        return {}
+    pi = pi / pi.sum()
+
+    ff = _get_ff_factors()
+    er = _bl_expected_returns(assets, ff, period)
+    q = np.array([er.get(l, 0.0) for l in assets])
+
+    # risk aversion δ anchored so the prior reproduces its cap-weighted AQR return
+    mkt_var = float(pi @ cov @ pi)
+    target_excess = float(pi @ q)
+    delta = target_excess / mkt_var if mkt_var > 0 else 3.0
+    implied = delta * cov @ pi                                 # equilibrium returns Π
+
+    idx = pd.Index(assets)
+    c = min(max(float(confidence), 0.0), 1.0)
+    if c <= 0:                                                 # no views → market-cap anchor
+        w = pi.copy()
+    else:
+        tau = 0.05
+        tau_cov = tau * cov
+        omega = np.diag(np.diag(tau_cov)) / c                  # view uncertainty (P=I)
+        inv_tau = np.linalg.pinv(tau_cov)
+        inv_om = np.linalg.pinv(omega)
+        mu = np.linalg.pinv(inv_tau + inv_om) @ (inv_tau @ implied + inv_om @ q)
+        w = np.linalg.pinv(delta * cov) @ mu
+        w = np.clip(w, 0.0, None)
+        w = w / w.sum() if w.sum() > 0 else pi
+    return {"assets": assets,
+            "target": pd.Series(w, index=idx),
+            "prior": pd.Series(pi, index=idx),
+            "implied": pd.Series(implied, index=idx),
+            "views": pd.Series(q, index=idx),
+            "cov_months": int(len(common)), "delta": float(delta)}
+
+
 def tfsa_cumulative_room(year: int) -> float:
     """Total TFSA room accrued from the year you turned 18 through `year`."""
     start = db.USER_BIRTH_YEAR + 18
