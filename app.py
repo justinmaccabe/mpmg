@@ -794,6 +794,17 @@ def render_correlations():
                "correlated. OPO (private) is excluded — no market data.")
 
 
+# Factor / exposure each underlying building block targets (display labels).
+BLOCK_FACTOR = {
+    "AVUS": "US Quality", "AVLV": "US Large Value", "AVUV": "US Small-Cap Value",
+    "AVSC": "US Small-Cap", "AVMV": "US Mid-Cap Value", "AVRE": "US Real Estate",
+    "AVDE": "Intl Developed", "AVIV": "Intl Developed Value",
+    "AVEM": "Emerging Markets", "AVES": "EM Value",
+    "US Market": "US Market", "Canada Market": "Canada Market",
+    "Intl Dev Market": "Intl Developed", "EM Market": "Emerging Markets",
+}
+
+
 def render_lookthrough():
     st.subheader("Portfolio Look-Through")
     pos, _ = load_portfolio()
@@ -833,7 +844,8 @@ def render_lookthrough():
         show(fig)
 
     st.markdown("##### Underlying Building Blocks")
-    bdf = pd.DataFrame([{"Building block": b, "Weight": w}
+    bdf = pd.DataFrame([{"Building block": b,
+                         "Factor": BLOCK_FACTOR.get(b, "—"), "Weight": w}
                         for b, w in sorted(lt["blocks"].items(), key=lambda x: -x[1])])
     st.dataframe(bdf.style.format({"Weight": "{:.1%}"}), width="stretch", hide_index=True)
     st.caption("AVGE is decomposed into its ten Avantis sleeves (renormalized to 100%); "
