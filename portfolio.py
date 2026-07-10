@@ -1085,7 +1085,28 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
         w = w / w.sum()
         return {"vol": float(np.sqrt(w @ cov @ w)), "ret": float(w @ mu)}
 
-    return {"assets": assets, "frontier": f,
+    # Held wrappers / global benchmark as reference points: realized vol from
+    # their own CAD history, expected return from their regional composition
+    # priced at the AQR views.
+    wrappers = {
+        "XUS": ("XUS.TO", {"US": 1.0}),
+        "XEQT": ("XEQT.TO", {"US": 0.45, "Canada": 0.245,
+                             "Intl Dev": 0.215, "EM": 0.09}),
+        "VT": ("VT", {"US": 0.63, "Canada": 0.03, "Intl Dev": 0.24, "EM": 0.10}),
+    }
+    whist = hist_in_cad(pricelib.get_history([s for s, _ in wrappers.values()],
+                                             period=period), period)
+    wrows = []
+    for lbl, (sym, mix) in wrappers.items():
+        if sym in whist.columns:
+            wm = whist[sym].resample("ME").last().pct_change(fill_method=None).dropna()
+            if len(wm) >= 12:
+                wrows.append({"label": lbl,
+                              "vol": float(np.nanstd(wm, ddof=1) * np.sqrt(12.0)),
+                              "ret": sum(AQR_REGION_ER.get(r, 0.03) * w
+                                         for r, w in mix.items())})
+
+    return {"assets": assets, "frontier": f, "wrapper_pts": pd.DataFrame(wrows),
             "asset_pts": pd.DataFrame({"label": assets, "vol": np.sqrt(np.diag(cov)),
                                        "ret": mu}),
             "tangency": tang,

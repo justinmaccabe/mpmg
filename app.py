@@ -156,7 +156,7 @@ def load_bl(period, confidence):
 
 @st.cache_data(ttl=86400)
 def load_frontier(period, sig):
-    # v2: CAD/USD basis + frontier hull (cache-bust marker)
+    # v3: wrapper reference points (cache-bust marker)
     pos, _ = load_portfolio()
     cur = portfolio.current_block_weights(pos, db.get_instruments_df())
     return portfolio.efficient_frontier(period, current_weights=cur)
@@ -1166,6 +1166,16 @@ def render_lookthrough():
             textfont=dict(size=10, color="#9AA0AB"),
             marker=dict(size=8, color=BLUE),
             hovertemplate="%{text}: σ %{x:.1%} · E[r] %{y:.1%}<extra></extra>"))
+        wp = ef.get("wrapper_pts")
+        if wp is not None and len(wp):
+            fig.add_trace(go.Scatter(
+                x=wp["vol"], y=wp["ret"], mode="markers+text",
+                name="Held wrappers / VT",
+                text=wp["label"], textposition="bottom center",
+                textfont=dict(size=10, color=GOLD),
+                marker=dict(size=9, color=GOLD, symbol="diamond-open",
+                            line=dict(width=1.4)),
+                hovertemplate="%{text}: σ %{x:.1%} · E[r] %{y:.1%}<extra></extra>"))
         marks = [("Current portfolio", ef.get("current_pt"), "#F4F4F4", "diamond"),
                  ("Market-cap anchor", ef.get("prior_pt"), "#8FB3D9", "square"),
                  ("Tangency (max Sharpe)", ef.get("tangency"), POS, "star")]

@@ -90,7 +90,9 @@ Adopted July 2026 from the framework above, using AQR year-end 2025 assumptions 
 | Emerging markets value | 5% | ±3pp |
 | US small-cap value / large value | 3% | ±2pp |
 
-Weights apply to the self-directed marketable sleeve on a look-through basis; the delegated core (Section 1) is exogenous. A deviation beyond its band at a scheduled review is corrected first by directing new contributions, then by trades if two review cycles of contributions prove insufficient. The current holdings (XEQT, XUS, AVGE) cannot reach the value-sleeve weights without holding the Avantis sleeves directly. Until that structural decision is made, the value rows are aspirational and this constraint is acknowledged here.
+Weights apply to the self-directed marketable sleeve on a look-through basis; the delegated core (Section 1) is exogenous.
+
+Implementation is deliberately staged. The first stage built the core: broad, cheap beta through XEQT and XUS, with low-cost multifactor exposure taken through AVGE rather than through direct sleeve positions. The second stage perfects the allocation over time: new contributions bleed into whichever sleeves sit furthest below target, and AVGE may be liquidated to seed a direct position in the sleeve it is most underweight — a switch that costs only commissions inside registered accounts. Being below the value-sleeve targets during this stage is part of the plan, not a breach. Trades beyond the AVGE conversion are a fallback, used only when two review cycles of contributions fail to close a band breach.
 
 ## 7. Leverage Policy
 
