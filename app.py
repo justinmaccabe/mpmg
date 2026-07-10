@@ -19,7 +19,7 @@ import portfolio
 # leaving sibling modules stale in sys.modules (app.py re-runs, portfolio.py does
 # not). Reload it when a newly-added symbol is missing so feature additions land
 # without a manual container reboot.
-if not hasattr(portfolio, "black_litterman_target"):
+if not hasattr(portfolio, "efficient_frontier"):
     importlib.reload(portfolio)
 
 st.set_page_config(page_title="Maccabe Portfolio Management Group",
@@ -148,6 +148,24 @@ def load_optim(period):
 @st.cache_data(ttl=86400)
 def load_bl(period, confidence):
     return portfolio.black_litterman_target(period, confidence)
+
+
+@st.cache_data(ttl=86400)
+def load_frontier(period, sig):
+    pos, _ = load_portfolio()
+    cur = portfolio.current_block_weights(pos, db.get_instruments_df())
+    return portfolio.efficient_frontier(period, current_weights=cur)
+
+
+@st.cache_data(ttl=86400)
+def load_block_corr(period):
+    return portfolio.block_correlation(period)
+
+
+@st.cache_data(ttl=86400)
+def load_risk_stats(sig, period="3y"):
+    return portfolio.risk_stats(db.get_transactions_df(), db.get_instruments_df(),
+                                period)
 
 
 @st.cache_data(ttl=3600)
@@ -504,6 +522,43 @@ def render_overview():
                     col.metric(lbl, "—")
             st.caption("Open and close values are recorded each trading day; weekly and "
                        "monthly views reflect period-end closes.")
+
+            st.markdown("##### Period Returns")
+            rfreq = st.segmented_control(
+                "Return frequency", ["Weekly", "Monthly"], default="Weekly",
+                label_visibility="collapsed", key="ret_freq") or "Weekly"
+            rrule = {"Weekly": "W", "Monthly": "ME"}[rfreq]
+            g = snaps.set_index("date").sort_index()
+            dollars = g["daily_pnl"].resample(rrule).sum()
+            base = g["market_value"].resample(rrule).last().shift(1)
+            base = base.fillna(g["market_value"].resample(rrule).first())
+            rets = pd.DataFrame({"dollars": dollars, "pct": dollars / base}).dropna()
+            if len(rets):
+                rets = rets.reset_index()
+                if rrule == "W":
+                    monday = rets["date"] - pd.to_timedelta(
+                        rets["date"].dt.weekday, unit="D")
+                    rets["_lbl"] = ("<span style='font-size:0.72em'>Week of</span><br>"
+                                    + monday.dt.strftime("%b %d, %Y"))
+                else:
+                    rets["_lbl"] = rets["date"].dt.strftime("%B")
+                bar_txt = (None if HIDE else
+                           [f"{'+' if d >= 0 else '−'}${abs(d):,.0f}"
+                            for d in rets["dollars"]])
+                htmpl = ("%{x}: %{y:+.2%}<extra></extra>" if HIDE else
+                         "%{x}: %{y:+.2%} (%{text})<extra></extra>")
+                fig = go.Figure(go.Bar(
+                    x=rets["_lbl"], y=rets["pct"],
+                    marker_color=[POS if v >= 0 else NEG for v in rets["pct"]],
+                    text=bar_txt, textposition="outside", hovertemplate=htmpl))
+                fig = style_fig(fig, 260, legend=False)
+                fig.update_yaxes(tickformat="+.1%", title=None)
+                fig.update_xaxes(type="category", categoryorder="array",
+                                 categoryarray=rets["_lbl"].tolist())
+                show(fig)
+                st.caption("Return = recorded daily P&L summed over the period, against "
+                           "the period-start value — contributions are excluded, so this "
+                           "is investment return, not account growth.")
         else:
             st.info("Performance history will populate once the daily snapshot job has run.")
     with c2:
@@ -713,7 +768,8 @@ def render_contributions():
 def render_benchmarks():
     st.subheader("Performance vs Benchmarks")
     inst = db.get_instruments_df()
-    holds = inst[(~inst["is_private"]) & inst["yf_symbol"].notna()]
+    holds = inst[(~inst["is_private"]) & inst["yf_symbol"].notna()
+                 & (~inst["ticker"].isin(["XUS", "ZMMK"]))]
     name_by_sym = dict(zip(holds["yf_symbol"], holds["ticker"]))
 
     ctrl = st.columns([2, 1, 1, 1])
@@ -897,6 +953,28 @@ def render_lookthrough():
                "international-value sleeves now carry positive targets. **Δ vs target** is "
                "your active bet.")
 
+    with st.expander("Correlation matrix — building blocks (monthly, 5Y)"):
+        try:
+            bc = load_block_corr("5y")
+        except Exception:
+            bc = pd.DataFrame()
+        if not bc.empty:
+            fig = go.Figure(go.Heatmap(
+                z=bc.values, x=bc.columns, y=bc.index,
+                zmin=-1, zmax=1,
+                colorscale=[[0.0, BLUE], [0.5, "#11151C"], [1.0, GOLD]],
+                text=[[f"{v:.2f}" for v in row] for row in bc.values],
+                texttemplate="%{text}", textfont=dict(size=10),
+                hovertemplate="%{y} × %{x}: %{z:.2f}<extra></extra>"))
+            fig = style_fig(fig, 480, legend=False)
+            show(fig)
+            st.caption("Monthly return correlations across the opportunity set. The "
+                       "distinct diversifiers are the international and EM sleeves; the "
+                       "US factor sleeves correlate highly with US broad beta — their "
+                       "case rests on the return premium, not decorrelation.")
+        else:
+            st.caption("Correlation data is currently unavailable.")
+
     # ---- Phase 2: optimized target & gaps -------------------------------
     st.divider()
     st.subheader("Optimized Target & Gaps (§6)")
@@ -951,8 +1029,6 @@ def render_lookthrough():
     fig.update_layout(barmode="group")
     fig.update_yaxes(tickformat=".0%")
     show(fig)
-    st.dataframe(comp.style.format("{:.1%}").map(color_pnl, subset=["Gap"]),
-                 width="stretch")
 
     if method == "Black-Litterman (AQR)":
         st.caption(
@@ -974,6 +1050,53 @@ def render_lookthrough():
             "Min-Variance concentrates in low-volatility, diversifying sleeves; Risk Parity "
             "weights by inverse volatility; Equal Weight is the unweighted reference. For a "
             "return-aware target over the full opportunity set, use Black-Litterman (AQR).")
+
+    # ---- Efficient frontier ---------------------------------------------
+    st.divider()
+    st.subheader("Efficient Frontier")
+    try:
+        ef = load_frontier("5y", holdings_sig())
+    except Exception:
+        ef = None
+    if ef and len(ef.get("frontier", [])):
+        fig = go.Figure()
+        f = ef["frontier"]
+        fig.add_trace(go.Scatter(
+            x=f["vol"], y=f["ret"], mode="lines", name="Frontier",
+            line=dict(color=GOLD, width=2.5),
+            hovertemplate="σ %{x:.1%} · E[r] %{y:.1%}<extra>Frontier</extra>"))
+        ap = ef["asset_pts"]
+        fig.add_trace(go.Scatter(
+            x=ap["vol"], y=ap["ret"], mode="markers+text", name="Assets",
+            text=ap["label"], textposition="top center",
+            textfont=dict(size=10, color="#9AA0AB"),
+            marker=dict(size=8, color=BLUE),
+            hovertemplate="%{text}: σ %{x:.1%} · E[r] %{y:.1%}<extra></extra>"))
+        marks = [("Current portfolio", ef.get("current_pt"), "#F4F4F4", "diamond"),
+                 ("Market-cap anchor", ef.get("prior_pt"), "#8FB3D9", "square"),
+                 ("Tangency (max Sharpe)", ef.get("tangency"), POS, "star")]
+        for name, pt, color, symbol in marks:
+            if pt:
+                fig.add_trace(go.Scatter(
+                    x=[pt["vol"]], y=[pt["ret"]], mode="markers", name=name,
+                    marker=dict(size=13, color=color, symbol=symbol,
+                                line=dict(width=1, color="#11151C")),
+                    hovertemplate=f"{name}: σ %{{x:.1%}} · E[r] %{{y:.1%}}"
+                                  "<extra></extra>"))
+        fig = style_fig(fig, 460)
+        fig.update_xaxes(title="Volatility (annualized)", tickformat=".0%")
+        fig.update_yaxes(title="Expected real return, excess of cash", tickformat=".1%")
+        show(fig)
+        st.caption(
+            f"Long-only frontier over the full opportunity set. Expected returns are the "
+            "AQR-based views (medium-term real, excess of cash) used by the Black-Litterman "
+            f"target; covariance from {ef['months']} months of history, annualized, with "
+            "shrinkage. The current portfolio plots below the frontier to the extent its US "
+            "concentration is uncompensated under AQR's assumptions; the tangency portfolio "
+            "maximizes expected Sharpe. Expected returns are assumptions, not forecasts — "
+            "the frontier moves with them.")
+    else:
+        st.caption("Frontier data is currently unavailable.")
 
 
 def render_leverage():
@@ -1052,6 +1175,47 @@ def render_leverage():
                "annualized, monthly total returns over the FF risk-free (current holdings "
                "backtested; OPO excluded). Leverage = gross exposure ÷ equity. Prime is an "
                "input — keep it current per IPS §7.")
+
+    st.divider()
+    st.subheader("Risk & Return Metrics")
+    try:
+        rs = load_risk_stats(sig, "3y")
+    except Exception:
+        rs = {}
+    if rs:
+        PCT = {"Arithmetic mean (monthly)", "Arithmetic mean (annualized)",
+               "Geometric mean (annualized)", "Standard deviation (annualized)",
+               "Downside deviation (monthly)", "Maximum drawdown",
+               "Alpha (annualized)", "Modigliani–Modigliani (M²)",
+               "Active return (annualized)", "Tracking error (annualized)",
+               "Historical VaR 5% (monthly)", "Analytical VaR 5% (monthly)",
+               "Conditional VaR 5% (monthly)", "Upside capture", "Downside capture"}
+        rows = []
+        for k, v in rs.items():
+            if k == "months":
+                continue
+            if v is None:
+                txt = "—"
+            elif isinstance(v, str):
+                txt = v
+            elif k in PCT:
+                txt = f"{v:.2%}"
+            else:
+                txt = f"{v:.2f}"
+            rows.append({"Metric": k, "Value": txt})
+        half = (len(rows) + 1) // 2
+        t1, t2 = st.columns(2)
+        t1.dataframe(pd.DataFrame(rows[:half]), width="stretch", hide_index=True)
+        t2.dataframe(pd.DataFrame(rows[half:]), width="stretch", hide_index=True)
+        st.caption(f"Monthly total returns, {rs['months']} months (current holdings "
+                   "backtested over 3Y; OPO excluded). Benchmark = "
+                   f"{db.BENCHMARK_SYMBOL}. VaR/CVaR are monthly loss magnitudes at 95% "
+                   "confidence; capture ratios are average up/down-month participation "
+                   "versus the benchmark. Alpha, beta, R², Treynor and M² are estimated "
+                   "against the benchmark over the same window — treat sub-3-year "
+                   "estimates as indicative, not statistically settled.")
+    else:
+        st.caption("Risk statistics are currently unavailable.")
 
 
 def render_trade():

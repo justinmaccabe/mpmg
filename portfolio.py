@@ -668,6 +668,209 @@ def black_litterman_target(period="5y", confidence=0.5) -> dict:
             "cov_months": int(len(common)), "delta": float(delta)}
 
 
+# --- Risk & return statistics (PortfolioVisualizer-style suite) -------------
+def risk_stats(tx, instruments, period="3y") -> dict:
+    """Monthly risk/return metrics for the modeled portfolio vs the benchmark.
+
+    Backtests current holdings (OPO excluded), resamples to monthly total
+    returns, and computes the standard institutional suite. Risk-free is the
+    Fama-French RF series where the windows overlap, else 0.
+    """
+    pp = portfolio_performance(tx, instruments, period)
+    if pp.empty or len(pp) < 40:
+        return {}
+    bench_hist = pricelib.get_history([BENCHMARK_SYMBOL], period=period)
+    b_daily = bench_hist[BENCHMARK_SYMBOL] if BENCHMARK_SYMBOL in bench_hist else None
+
+    def _monthly(series):
+        m = series.resample("ME").last().pct_change().dropna()
+        m.index = m.index.to_period("M").to_timestamp("M")
+        return m
+
+    p = _monthly(pp)
+    if len(p) < 6:
+        return {}
+    b = _monthly(b_daily) if b_daily is not None else pd.Series(dtype=float)
+    both = pd.concat([p.rename("p"), b.rename("b")], axis=1).dropna()
+
+    try:
+        rf = _get_ff_factors()["RF"].reindex(p.index).fillna(0.0)
+    except Exception:
+        rf = pd.Series(0.0, index=p.index)
+    ex = p - rf
+
+    r = p.values
+    mean_mo = float(np.mean(r))
+    geo_mo = float(np.prod(1 + r) ** (1 / len(r)) - 1)
+    std_mo = float(np.nanstd(r, ddof=1))
+    downside = np.minimum(r, 0.0)
+    dd_mo = float(np.sqrt(np.mean(downside ** 2)))
+    ann = 12.0
+    geo_ann = (1 + geo_mo) ** ann - 1
+    std_ann = std_mo * np.sqrt(ann)
+    mdd = max_drawdown(pp)
+
+    ex_ann = float(np.mean(ex.values)) * ann
+    sharpe = ex_ann / std_ann if std_ann > 0 else None
+    sortino = (ex_ann / (dd_mo * np.sqrt(ann))) if dd_mo > 0 else None
+    calmar = (geo_ann / abs(mdd)) if mdd else None
+
+    z = (r - mean_mo) / std_mo if std_mo > 0 else np.zeros_like(r)
+    skew = float(np.mean(z ** 3))
+    kurt = float(np.mean(z ** 4) - 3.0)
+    var_h = float(-np.percentile(r, 5))
+    var_a = float(-(mean_mo - 1.645 * std_mo))
+    tail = r[r <= np.percentile(r, 5)]
+    cvar = float(-np.mean(tail)) if len(tail) else None
+
+    beta = alpha_ann = r2 = corr = te = ir = active = treynor = m2 = None
+    up_cap = down_cap = None
+    if len(both) >= 6:
+        pv, bv = both["p"].values, both["b"].values
+        rf_b = rf.reindex(both.index).fillna(0.0).values
+        pe, be = pv - rf_b, bv - rf_b
+        vb = float(np.nanstd(bv, ddof=1))
+        cov_pb = float(np.cov(pe, be)[0, 1])
+        var_b = float(np.var(be, ddof=1))
+        if var_b > 0:
+            beta = cov_pb / var_b
+            alpha_ann = (np.mean(pe) - beta * np.mean(be)) * ann
+            treynor = ex_ann / beta if beta else None
+        corr = float(np.corrcoef(pv, bv)[0, 1])
+        r2 = corr ** 2 if corr is not None else None
+        diff = pv - bv
+        te = float(np.nanstd(diff, ddof=1)) * np.sqrt(ann)
+        geo_b = float(np.prod(1 + bv) ** (ann / len(bv)) - 1)
+        active = geo_ann - geo_b
+        ir = active / te if te and te > 0 else None
+        if sharpe is not None and vb > 0:
+            m2 = sharpe * vb * np.sqrt(ann) + float(np.mean(rf_b)) * ann
+        up_m, dn_m = bv > 0, bv < 0
+        if up_m.any() and float(np.mean(bv[up_m])):
+            up_cap = float(np.mean(pv[up_m]) / np.mean(bv[up_m]))
+        if dn_m.any() and float(np.mean(bv[dn_m])):
+            down_cap = float(np.mean(pv[dn_m]) / np.mean(bv[dn_m]))
+
+    gains, losses = r[r > 0], r[r < 0]
+    gain_loss = (float(np.mean(gains) / abs(np.mean(losses)))
+                 if len(gains) and len(losses) else None)
+
+    return {
+        "months": int(len(r)),
+        "Arithmetic mean (monthly)": mean_mo,
+        "Arithmetic mean (annualized)": mean_mo * ann,
+        "Geometric mean (annualized)": geo_ann,
+        "Standard deviation (annualized)": std_ann,
+        "Downside deviation (monthly)": dd_mo,
+        "Maximum drawdown": mdd,
+        "Benchmark correlation": corr, "Beta": beta,
+        "Alpha (annualized)": alpha_ann, "R²": r2,
+        "Sharpe ratio": sharpe, "Sortino ratio": sortino,
+        "Treynor ratio (%)": treynor * 100 if treynor is not None else None,
+        "Calmar ratio": calmar,
+        "Modigliani–Modigliani (M²)": m2,
+        "Active return (annualized)": active,
+        "Tracking error (annualized)": te,
+        "Information ratio": ir,
+        "Skewness": skew, "Excess kurtosis": kurt,
+        "Historical VaR 5% (monthly)": var_h,
+        "Analytical VaR 5% (monthly)": var_a,
+        "Conditional VaR 5% (monthly)": cvar,
+        "Upside capture": up_cap, "Downside capture": down_cap,
+        "Positive periods": f"{int((r > 0).sum())} of {len(r)} "
+                            f"({(r > 0).mean():.0%})",
+        "Gain/loss ratio": gain_loss,
+    }
+
+
+def block_correlation(period="5y") -> pd.DataFrame:
+    """Correlation matrix of monthly returns across the BL opportunity set."""
+    proxies = {u[0]: u[1] for u in BL_UNIVERSE}
+    hist = pricelib.get_history(list(proxies.values()), period=period)
+    if hist.empty:
+        return pd.DataFrame()
+    monthly = hist.resample("ME").last().pct_change(fill_method=None)
+    cols = {sym: lbl for lbl, sym in proxies.items() if sym in monthly.columns}
+    m = monthly[list(cols)].rename(columns=cols)
+    m = m.dropna(axis=1, thresh=12)
+    return m.corr()
+
+
+def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dict:
+    """Long-only efficient frontier over the full opportunity set.
+
+    Expected returns are the AQR-based views (real, excess of cash) used by the
+    BL target; covariance is historical monthly, annualized. The frontier is
+    traced from closed-form minimum-variance solutions per target return
+    (clipped long-only) sharpened with a Dirichlet sample cloud.
+    """
+    labels = [u[0] for u in BL_UNIVERSE]
+    proxies = {u[0]: u[1] for u in BL_UNIVERSE}
+    hist = pricelib.get_history(list(proxies.values()), period=period)
+    if hist.empty:
+        return {}
+    monthly = hist.resample("ME").last().pct_change(fill_method=None)
+    assets = [l for l in labels if proxies[l] in monthly.columns
+              and int(monthly[proxies[l]].notna().sum()) >= 12]
+    if len(assets) < 3:
+        return {}
+    arr = monthly[[proxies[l] for l in assets]].to_numpy(dtype=float)
+    common = arr[~np.isnan(arr).any(axis=1)]
+    n = len(assets)
+    if len(common) < n + 2:
+        return {}
+    cov = np.cov(common, rowvar=False) * 12.0
+    cov = 0.75 * cov + 0.25 * np.diag(np.diag(cov))
+    ff = _get_ff_factors()
+    er = _bl_expected_returns(assets, ff, period)
+    mu = np.array([er.get(l, 0.0) for l in assets])
+
+    cands = [np.eye(n)[i] for i in range(n)]                    # single assets
+    inv = np.linalg.pinv(cov)
+    ones = np.ones(n)
+    A = np.array([[ones @ inv @ ones, ones @ inv @ mu],
+                  [mu @ inv @ ones, mu @ inv @ mu]])
+    Ainv = np.linalg.pinv(A)
+    for t in np.linspace(mu.min(), mu.max(), 60):               # closed-form per target
+        lam = Ainv @ np.array([1.0, t])
+        w = inv @ (lam[0] * ones + lam[1] * mu)
+        w = np.clip(w, 0, None)
+        if w.sum() > 0:
+            cands.append(w / w.sum())
+    rng = np.random.default_rng(7)
+    cands.extend(rng.dirichlet(0.35 * ones, size=n_samples))
+    W = np.array(cands)
+    rets = W @ mu
+    vols = np.sqrt(np.einsum("ij,jk,ik->i", W, cov, W))
+
+    order = np.argsort(vols)                                    # upper-left envelope
+    fv, fr, best = [], [], -np.inf
+    for i in order:
+        if rets[i] > best:
+            best = rets[i]
+            fv.append(float(vols[i]))
+            fr.append(float(rets[i]))
+    f = pd.DataFrame({"vol": fv, "ret": fr})
+    f = f[f["ret"] >= f["ret"].iloc[0]]                         # drop inefficient tail
+    tang = f.loc[(f["ret"] / f["vol"]).idxmax()] if len(f) else None
+
+    def point(w_map):
+        w = np.array([w_map.get(l, 0.0) for l in assets])
+        if w.sum() <= 0:
+            return None
+        w = w / w.sum()
+        return {"vol": float(np.sqrt(w @ cov @ w)), "ret": float(w @ mu)}
+
+    return {"assets": assets, "frontier": f,
+            "asset_pts": pd.DataFrame({"label": assets, "vol": np.sqrt(np.diag(cov)),
+                                       "ret": mu}),
+            "tangency": None if tang is None else
+                        {"vol": float(tang["vol"]), "ret": float(tang["ret"])},
+            "prior_pt": point(BL_PRIOR),
+            "current_pt": point(current_weights) if current_weights else None,
+            "months": int(len(common))}
+
+
 def tfsa_cumulative_room(year: int) -> float:
     """Total TFSA room accrued from the year you turned 18 through `year`."""
     start = db.USER_BIRTH_YEAR + 18
