@@ -1,6 +1,6 @@
 # Investment Policy Statement
 
-*Draft v0.1 for Justin Maccabe · Living document · Prepared May 27, 2026*
+*v1.0 for Justin Maccabe · Adopted · Living document · Prepared May 27, 2026*
 
 ## 1. Purpose and Scope
 
@@ -78,12 +78,12 @@ Policy weights will be informed by three complementary approaches. No single opt
 
 Leverage is employed through a personal line of credit at an expected rate of prevailing Canadian prime plus 0.50%. Its use is justified only while it improves the expected long-term wealth outcome after financing costs and remains serviceable from employment income without requiring forced asset sales during market stress.
 
-The target leverage framework is to lever the diversified portfolio toward market-like volatility rather than to maximize nominal exposure. If the unlevered optimized portfolio volatility is lower than the reference market volatility, the target leverage factor may be approximated as: target leverage factor = reference market volatility / unlevered portfolio volatility. The resulting borrowing amount must also satisfy serviceability, behavioral, and drawdown constraints.
+Leverage is sized by balance-sheet limits rather than a volatility ratio. The unlevered portfolio already exhibits near-market volatility, so volatility-matching would prescribe no borrowing and does not describe practice. The target leverage factor is 1.25× equity, with a hard ceiling of 1.50×. New draws require a documented expected Sharpe advantage over the reference market, a current drawdown of less than 20% from peak, and comfortable interest serviceability from employment income. A position above target is corrected by directing contributions to assets rather than new draws — never by forced sales.
 
 | Leverage Control | Policy |
 | --- | --- |
 | Financing cost | Canadian prime + 0.50%, evaluated at the prevailing prime rate and updated as prime changes. |
-| Target risk | Leverage is intended to restore total volatility toward market-like risk, not to create materially above-market volatility. |
+| Sizing | Target 1.25× equity; hard ceiling 1.50×. No new draws above target, when drawdown from peak exceeds 20%, or without a documented expected Sharpe advantage. |
 | Serviceability | Interest payments must be comfortably serviceable from employment income under adverse market conditions. |
 | Yield and cost flag | If the estimated yield on the underlying portfolio is at or below the financing cost, the leverage position must be flagged for review. |
 | Sharpe override | A yield-cost flag does not require automatic deleveraging if the portfolio's expected Sharpe ratio remains higher than the market's expected Sharpe ratio. |

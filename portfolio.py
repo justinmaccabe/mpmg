@@ -819,8 +819,13 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
     n = len(assets)
     if len(common) < n + 2:
         return {}
-    cov = np.cov(common, rowvar=False) * 12.0
-    cov = 0.75 * cov + 0.25 * np.diag(np.diag(cov))
+    # realized vol from each asset's own full history (the common window is
+    # only as long as the youngest fund and understates seasoned funds' risk);
+    # correlations from the common window, lightly shrunk toward identity
+    vol_own = np.nanstd(arr, axis=0, ddof=1) * np.sqrt(12.0)
+    corr = np.corrcoef(common, rowvar=False)
+    corr = 0.75 * corr + 0.25 * np.eye(n)
+    cov = np.outer(vol_own, vol_own) * corr
     ff = _get_ff_factors()
     er = _bl_expected_returns(assets, ff, period)
     mu = np.array([er.get(l, 0.0) for l in assets])

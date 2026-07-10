@@ -953,27 +953,37 @@ def render_lookthrough():
                "international-value sleeves now carry positive targets. **Δ vs target** is "
                "your active bet.")
 
-    with st.expander("Correlation matrix — building blocks (monthly, 5Y)"):
-        try:
-            bc = load_block_corr("5y")
-        except Exception:
-            bc = pd.DataFrame()
-        if not bc.empty:
-            fig = go.Figure(go.Heatmap(
-                z=bc.values, x=bc.columns, y=bc.index,
-                zmin=-1, zmax=1,
-                colorscale=[[0.0, BLUE], [0.5, "#11151C"], [1.0, GOLD]],
-                text=[[f"{v:.2f}" for v in row] for row in bc.values],
-                texttemplate="%{text}", textfont=dict(size=10),
-                hovertemplate="%{y} × %{x}: %{z:.2f}<extra></extra>"))
-            fig = style_fig(fig, 480, legend=False)
-            show(fig)
-            st.caption("Monthly return correlations across the opportunity set. The "
-                       "distinct diversifiers are the international and EM sleeves; the "
-                       "US factor sleeves correlate highly with US broad beta — their "
-                       "case rests on the return premium, not decorrelation.")
-        else:
-            st.caption("Correlation data is currently unavailable.")
+    st.markdown("##### Correlation Matrix — Building Blocks")
+    try:
+        bc = load_block_corr("5y")
+    except Exception:
+        bc = pd.DataFrame()
+    if not bc.empty:
+        labels = list(bc.columns)
+        k = len(labels)
+        z, txt = [], []
+        for i in range(1, k):            # lower triangle only, diagonal dropped
+            z.append([bc.values[i][j] if j < i else None for j in range(k - 1)])
+            txt.append([f"{bc.values[i][j]:.2f}" if j < i else ""
+                        for j in range(k - 1)])
+        fig = go.Figure(go.Heatmap(
+            z=z, x=labels[:-1], y=labels[1:],
+            zmin=0, zmax=1,
+            colorscale=[[0.0, "#1B2433"], [0.5, "#4F6D8F"], [1.0, "#A88620"]],
+            text=txt, texttemplate="%{text}",
+            textfont=dict(size=12, color="#F4F4F4"),
+            hoverongaps=False, showscale=False,
+            hovertemplate="%{y} × %{x}: %{z:.2f}<extra></extra>"))
+        fig = style_fig(fig, 520, legend=False)
+        fig.update_yaxes(autorange="reversed")
+        show(fig)
+        st.caption("Monthly return correlations, five years (or each pair's common "
+                   "history). Darker = more diversifying. The genuine diversifiers are "
+                   "the international, EM, and Canadian sleeves; the US factor sleeves "
+                   "correlate highly with US broad beta — their case rests on the return "
+                   "premium, not decorrelation.")
+    else:
+        st.caption("Correlation data is currently unavailable.")
 
     # ---- Phase 2: optimized target & gaps -------------------------------
     st.divider()
@@ -1157,6 +1167,15 @@ def render_leverage():
               f"{b_sh:.2f}" if b_sh is not None else "—")
 
     st.markdown("##### IPS flags")
+    lf = lev["leverage"]
+    if lf > 1.50:
+        flag("bad", f"Leverage {lf:.2f}× exceeds the §7 hard ceiling (1.50×) — "
+             "reduce the position.")
+    elif lf > 1.25:
+        flag("warn", f"Leverage {lf:.2f}× is above the §7 target (1.25×): no new "
+             "draws; direct contributions to assets until the ratio glides back.")
+    else:
+        flag("ok", f"Leverage {lf:.2f}× — within the §7 target (1.25×, ceiling 1.50×).")
     if lev["drawdown_trigger"]:
         flag("bad", "Drawdown ≥ 50% from peak — IPS §8 mandatory strategy review.")
     else:
