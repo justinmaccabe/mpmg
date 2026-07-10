@@ -92,7 +92,7 @@ Adopted July 2026 from the framework above, using AQR year-end 2025 assumptions 
 
 Weights apply to the self-directed marketable sleeve on a look-through basis; the delegated core (Section 1) is exogenous.
 
-Implementation is deliberately staged. The first stage built the core: broad, cheap beta through XEQT and XUS, with low-cost multifactor exposure taken through AVGE rather than through direct sleeve positions. The second stage perfects the allocation over time: new contributions bleed into whichever sleeves sit furthest below target, and AVGE may be liquidated to seed a direct position in the sleeve it is most underweight — a switch that costs only commissions inside registered accounts. Being below the value-sleeve targets during this stage is part of the plan, not a breach. Trades beyond the AVGE conversion are a fallback, used only when two review cycles of contributions fail to close a band breach.
+Implementation is deliberately staged. The first stage built the core: broad, cheap beta through XEQT and XUS, with low-cost multifactor exposure taken through AVGE rather than through direct sleeve positions. The second stage perfects the allocation over time: new contributions bleed into whichever sleeves sit furthest below target, and AVGE may be liquidated to seed a direct position in the sleeve it is most underweight.
 
 ## 7. Leverage Policy
 
