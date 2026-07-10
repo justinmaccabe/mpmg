@@ -54,7 +54,7 @@ The investable universe is global, CAD-listed and USD-listed. Broad market funds
 | --- | --- |
 | Global market beta | Core equity exposure and baseline comparison against broad market-cap-weighted alternatives. |
 | United States equity | Major developed-market equity exposure and primary reference-market comparison through the S&P 500. |
-| Canadian equity | A deliberate home allocation of roughly 10% of equity, for currency alignment with future CAD spending and dividend-tax efficiency. Held well below the ~25% home bias built into Canadian all-in-one ETFs, which is more Canada than this policy wants. |
+| Canadian equity | A deliberate home allocation of roughly 10% of equity, for currency alignment with future CAD spending and dividend-tax efficiency. |
 | International developed equity | Geographic diversification, valuation diversification, and non-US currency exposure. |
 | Emerging markets equity | Higher expected growth and diversification, with explicit recognition of governance, currency, and volatility risks. |
 | Small-cap and value | Primary academic factor tilts where implementation quality and transaction-cost-aware design are critical. |

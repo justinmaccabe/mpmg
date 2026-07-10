@@ -1039,12 +1039,18 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
     A = np.array([[ones @ inv @ ones, ones @ inv @ mu],
                   [mu @ inv @ ones, mu @ inv @ mu]])
     Ainv = np.linalg.pinv(A)
-    for t in np.linspace(mu.min(), mu.max(), 60):               # closed-form per target
+    for t in np.linspace(mu.min(), mu.max(), 120):              # closed-form per target
         lam = Ainv @ np.array([1.0, t])
         w = inv @ (lam[0] * ones + lam[1] * mu)
         w = np.clip(w, 0, None)
         if w.sum() > 0:
             cands.append(w / w.sum())
+    for a in range(n):                                          # pairwise blends trace
+        for b in range(a + 1, n):                               # the sparse hull tail
+            for t in np.linspace(0.05, 0.95, 19):
+                w = np.zeros(n)
+                w[a], w[b] = t, 1 - t
+                cands.append(w)
     rng = np.random.default_rng(7)
     cands.extend(rng.dirichlet(0.35 * ones, size=n_samples))
     W = np.array(cands)
@@ -1068,7 +1074,9 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
     peak = max(range(len(hull)), key=lambda j: hull[j][1])
     hull = hull[:peak + 1]                       # stop at max return; no downslope
     f = pd.DataFrame(hull, columns=["vol", "ret"])
-    tang = f.loc[(f["ret"] / f["vol"]).idxmax()] if len(f) else None
+    ti = int(np.argmax(np.where(vols > 0, rets / vols, -np.inf)))
+    tang = {"vol": float(vols[ti]), "ret": float(rets[ti]),
+            "weights": pd.Series(W[ti], index=assets)}
 
     def point(w_map):
         w = np.array([w_map.get(l, 0.0) for l in assets])
@@ -1080,8 +1088,7 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
     return {"assets": assets, "frontier": f,
             "asset_pts": pd.DataFrame({"label": assets, "vol": np.sqrt(np.diag(cov)),
                                        "ret": mu}),
-            "tangency": None if tang is None else
-                        {"vol": float(tang["vol"]), "ret": float(tang["ret"])},
+            "tangency": tang,
             "prior_pt": point(BL_PRIOR),
             "current_pt": point(current_weights) if current_weights else None,
             "months": int(len(common))}

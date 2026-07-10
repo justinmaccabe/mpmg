@@ -109,6 +109,7 @@ def holdings_sig():
 
 @st.cache_data(ttl=3600)
 def perf_all(period):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     inst = db.get_instruments_df()
     holds = inst[(~inst["is_private"]) & inst["yf_symbol"].notna()]
     syms = list(holds["yf_symbol"]) + list(portfolio.BENCHMARKS.values())
@@ -117,12 +118,14 @@ def perf_all(period):
 
 @st.cache_data(ttl=3600)
 def perf_portfolio(period):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     return portfolio.portfolio_performance(db.get_transactions_df(),
                                            db.get_instruments_df(), period)
 
 
 @st.cache_data(ttl=86400)
 def load_factors(sig):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     pos, _ = load_portfolio()
     return portfolio.factor_exposure(pos, db.get_instruments_df())
 
@@ -135,21 +138,25 @@ def load_yield(sig):
 
 @st.cache_data(ttl=86400)
 def load_sharpe(sig):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     return portfolio.sharpe_ratios(db.get_transactions_df(), db.get_instruments_df())
 
 
 @st.cache_data(ttl=86400)
 def load_optim(period):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     return portfolio.optimize_blocks(period)
 
 
 @st.cache_data(ttl=86400)
 def load_bl(period, confidence):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     return portfolio.black_litterman_target(period, confidence)
 
 
 @st.cache_data(ttl=86400)
 def load_frontier(period, sig):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     pos, _ = load_portfolio()
     cur = portfolio.current_block_weights(pos, db.get_instruments_df())
     return portfolio.efficient_frontier(period, current_weights=cur)
@@ -157,6 +164,7 @@ def load_frontier(period, sig):
 
 @st.cache_data(ttl=86400)
 def load_block_corr(period):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     return portfolio.block_correlation(period)
 
 
@@ -179,12 +187,14 @@ def load_quote_asof():
 
 @st.cache_data(ttl=86400)
 def load_risk_stats(sig, period="3y"):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     return portfolio.risk_stats(db.get_transactions_df(), db.get_instruments_df(),
                                 period)
 
 
 @st.cache_data(ttl=3600)
 def load_period_returns(sig):
+    # v2: CAD/USD basis + frontier hull (cache-bust marker)
     return portfolio.period_returns(db.get_transactions_df(), db.get_instruments_df())
 
 
