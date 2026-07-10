@@ -19,7 +19,7 @@ import portfolio
 # leaving sibling modules stale in sys.modules (app.py re-runs, portfolio.py does
 # not). Reload it when a newly-added symbol is missing so feature additions land
 # without a manual container reboot.
-if not hasattr(portfolio, "efficient_frontier"):
+if not hasattr(portfolio, "policy_benchmark"):
     importlib.reload(portfolio)
 
 st.set_page_config(page_title="Maccabe Portfolio Management Group",
@@ -160,6 +160,11 @@ def load_frontier(period, sig):
 @st.cache_data(ttl=86400)
 def load_block_corr(period):
     return portfolio.block_correlation(period)
+
+
+@st.cache_data(ttl=3600)
+def load_policy_benchmark(period):
+    return portfolio.policy_benchmark(period)
 
 
 @st.cache_data(ttl=86400)
@@ -772,11 +777,12 @@ def render_benchmarks():
                  & (~inst["ticker"].isin(["XUS", "ZMMK"]))]
     name_by_sym = dict(zip(holds["yf_symbol"], holds["ticker"]))
 
-    ctrl = st.columns([2, 1, 1, 1])
+    ctrl = st.columns([2, 1, 1, 1, 1])
     period = ctrl[0].selectbox("Period", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
     show_pf = ctrl[1].checkbox("Portfolio", value=True)
-    show_tm = ctrl[2].checkbox("Total Market", value=True)
-    show_sp = ctrl[3].checkbox("S&P 500", value=True)
+    show_pol = ctrl[2].checkbox("Policy (§6.1)", value=True)
+    show_tm = ctrl[3].checkbox("Total Market", value=True)
+    show_sp = ctrl[4].checkbox("S&P 500", value=True)
     chosen = st.multiselect("Holdings to plot", list(name_by_sym.values()),
                             default=list(name_by_sym.values()))
 
@@ -788,11 +794,18 @@ def render_benchmarks():
     for sym, name in name_by_sym.items():
         if name in chosen and sym in perf.columns:
             fig.add_trace(go.Scatter(x=perf.index, y=perf[sym], mode="lines", name=name))
-    if show_pf:
-        pp = perf_portfolio(period)
-        if not pp.empty:
-            fig.add_trace(go.Scatter(x=pp.index, y=pp.values, mode="lines",
-                          name="Portfolio", line=dict(width=4, color=BLUE)))
+    pp = perf_portfolio(period) if show_pf else pd.Series(dtype=float)
+    if show_pf and not pp.empty:
+        fig.add_trace(go.Scatter(x=pp.index, y=pp.values, mode="lines",
+                      name="Portfolio", line=dict(width=4, color=BLUE)))
+    try:
+        pol = load_policy_benchmark(period)
+    except Exception:
+        pol = pd.Series(dtype=float)
+    if show_pol and not pol.empty:
+        fig.add_trace(go.Scatter(x=pol.index, y=pol.values, mode="lines",
+                      name="Policy (§6.1)", line=dict(width=3, dash="dashdot",
+                                                      color=SAGE)))
     bench_color = {"Total Market": GOLD, "S&P 500": "#F4F4F4"}
     bench_on = {"Total Market": show_tm, "S&P 500": show_sp}
     for label, sym in portfolio.BENCHMARKS.items():
@@ -803,10 +816,25 @@ def render_benchmarks():
     fig.update_yaxes(title="Growth of $100")
     fig.update_xaxes(type="date", tickformat="%b %Y")
     show(fig)
+
+    if not pp.empty and not pol.empty and "^GSPC" in perf.columns:
+        r_pf = pp.iloc[-1] / 100 - 1
+        r_pol = pol.iloc[-1] / 100 - 1
+        r_sp = perf["^GSPC"].iloc[-1] / 100 - 1
+        a1, a2, a3, a4 = st.columns(4)
+        a1.metric(f"Portfolio ({period})", f"{r_pf:+.1%}")
+        a2.metric("Policy (§6.1)", f"{r_pol:+.1%}")
+        a3.metric("Implementation gap", f"{r_pf - r_pol:+.1%}",
+                  help="Actual minus policy: fund selection, structure, and drift. "
+                       "Should sit near zero (IPS §9).")
+        a4.metric("Allocation effect", f"{r_pol - r_sp:+.1%}",
+                  help="Policy minus S&P 500: the cost or benefit of the global, "
+                       "value-tilted allocation itself. Intentional; judged over years.")
     st.caption("Indexed to 100 at the period start; relative price performance only. "
                "Portfolio reflects current holdings backtested on price history "
-               "(OPO excluded — no market data). Benchmarks: Total Market (VT) and "
-               "S&P 500 (^GSPC).")
+               "(OPO excluded — no market data). Policy = §6.1 weights on investable "
+               "proxies, daily rebalanced; its history starts at the youngest proxy. "
+               "Benchmarks: Total Market (VT) and S&P 500 (^GSPC).")
 
 
 def render_factor():

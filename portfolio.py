@@ -668,6 +668,37 @@ def black_litterman_target(period="5y", confidence=0.5) -> dict:
             "cov_months": int(len(common)), "delta": float(delta)}
 
 
+# --- Custom policy benchmark (IPS §6.1) --------------------------------------
+# Policy weights applied to investable proxies, fixed weights, daily rebalance.
+POLICY_BENCHMARK = {
+    "AVUS": 0.35, "AVDE": 0.22, "AVIV": 0.16, "XIC.TO": 0.11,
+    "AVEM": 0.08, "AVES": 0.05, "AVUV": 0.015, "AVLV": 0.015,
+}
+
+
+def policy_benchmark(period="1y") -> pd.Series:
+    """Return series of the §6.1 policy portfolio, rebased to 100.
+
+    Actual − policy = implementation gap (should sit near zero);
+    policy − S&P 500 = the allocation choice (intentional, judged over years).
+    """
+    syms = list(POLICY_BENCHMARK)
+    hist = pricelib.get_history(syms, period=period)
+    if hist.empty:
+        return pd.Series(dtype=float)
+    have = [s for s in syms if s in hist.columns and hist[s].notna().sum() > 20]
+    if not have:
+        return pd.Series(dtype=float)
+    rets = hist[have].pct_change(fill_method=None).dropna()
+    if rets.empty:
+        return pd.Series(dtype=float)
+    w = np.array([POLICY_BENCHMARK[s] for s in have])
+    w = w / w.sum()
+    port = (rets * w).sum(axis=1)
+    value = (1 + port).cumprod()
+    return value / value.iloc[0] * 100
+
+
 # --- Risk & return statistics (PortfolioVisualizer-style suite) -------------
 def risk_stats(tx, instruments, period="3y") -> dict:
     """Monthly risk/return metrics for the modeled portfolio vs the benchmark.
