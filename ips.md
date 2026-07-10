@@ -4,9 +4,9 @@
 
 ## 1. Purpose and Scope
 
-This Investment Policy Statement establishes the governing framework for a lifelong, equity-oriented, factor-diversified investment program across the TFSA and FHSA accounts of Justin Maccabe. The document is intended to guide portfolio construction, implementation, leverage use, monitoring, rebalancing, and periodic review. It is a living document and should be updated when facts, objectives, constraints, or capital market assumptions materially change.
+This Investment Policy Statement is the governing framework for a lifelong, equity-oriented, factor-diversified investment program across the TFSA and FHSA accounts of Justin Maccabe. It covers portfolio construction, implementation, leverage, monitoring, and rebalancing, and gets updated whenever facts, objectives, or constraints materially change.
 
-The policy separates investment philosophy from implementation mechanics. The desired portfolio will be derived from theory, expected risk premia, diversification, and mean-variance analysis before considering trading commissions, broker availability, ETF shelf constraints, or foreign exchange execution. Implementation costs remain important, but they are execution constraints rather than the source of the investment mandate.
+The policy separates investment philosophy from implementation mechanics. The desired portfolio is derived first from theory: expected risk premia, diversification, and mean-variance analysis. Trading commissions, broker availability, ETF shelf constraints, and foreign exchange execution come after. Costs matter, but they constrain execution; they do not set the mandate.
 
 A meaningful allocation is held through an externally-managed, cost-advantaged program accessed via the investor's employment, maintained as a long-term delegated core for manager diversification, access to pension-style (private) assets, and automated savings discipline. The philosophy, optimization, factor, leverage, and rebalancing provisions below govern the self-directed portfolio; this delegated allocation is treated as an exogenous core, reviewed annually, and liquidated if preferential access ends (e.g., a change of employment).
 
@@ -24,16 +24,16 @@ A meaningful allocation is held through an externally-managed, cost-advantaged p
 
 ## 3. Investment Philosophy
 
-The portfolio is grounded in the belief that diversified exposure to compensated equity risk premia can produce a portfolio with a higher expected Sharpe ratio than a simple market-cap-weighted equity benchmark. If the unlevered diversified portfolio has lower volatility than the reference market portfolio, prudent external leverage may be used to scale risk back toward market-like volatility while preserving the higher underlying Sharpe ratio.
+The portfolio is grounded in the belief that diversified exposure to compensated equity risk premia can produce a portfolio with a higher expected Sharpe ratio than a simple market-cap-weighted equity benchmark. Where the diversified portfolio carries a higher expected Sharpe ratio than the market, modest external leverage on that portfolio is a better use of risk than concentrating in the market itself. Section 7 governs when and how much.
 
-The portfolio will be built using low-cost, rules-based, broadly diversified investment vehicles where possible. The preferred implementation style is index or systematic active index-like exposure rather than discretionary security selection. Factor purity, total cost, tax treatment, liquidity, and operational simplicity will all be evaluated, but the policy objective is not limited to commission-free ETF availability.
+The portfolio is built from low-cost, rules-based, broadly diversified vehicles: indexing or systematic active strategies, not discretionary stock picking. Vehicle selection weighs factor purity, total cost, tax treatment, liquidity, and operational simplicity.
 
 | Belief | Policy Implication |
 | --- | --- |
 | Mean-variance optimization is useful. | Expected return, volatility, covariance, and Sharpe ratio will be estimated explicitly and compared across models. |
 | Diversification has economic value. | The portfolio may allocate across geographies, capitalization segments, and factors even when doing so creates tracking error versus the S&P 500. |
 | Factor premia may persist. | Value, size, momentum, quality/profitability, low-volatility/defensive, international, and emerging market exposures may be sought deliberately. |
-| Estimation error is material. | Historical Sharpe maximization, Black-Litterman, and risk parity will be compared before final policy weights are selected. |
+| Estimation error is material. | Policy weights stay anchored to the market portfolio; return views enter at modest confidence rather than through raw historical means (Section 6). |
 | Leverage can be rational. | LOC leverage may be used only under a formal policy framework with ongoing cost, yield, Sharpe, and drawdown monitoring. |
 
 ## 4. Objectives
@@ -44,16 +44,17 @@ The primary return objective is to maximize long-term risk-adjusted real wealth 
 
 ### Risk Objective
 
-The risk objective is to maintain a diversified global equity portfolio whose unlevered volatility is expected to be below that of the reference market portfolio, then consider leverage sufficient to restore total portfolio volatility toward market-like risk. Risk will be measured using volatility, drawdown, leverage ratio, factor concentration, currency exposure, and benchmark-relative behavior.
+The risk objective is a diversified global equity portfolio run at roughly market-like total risk, with leverage bounded by the balance-sheet limits in Section 7. Risk is measured by volatility, drawdown, leverage ratio, factor concentration, currency exposure, and benchmark-relative behaviour.
 
 ## 5. Permitted Investment Universe
 
-The investable universe is global and may include CAD-listed and USD-listed ETFs. The policy permits broad market funds, factor funds, regional funds, and systematic active equity ETFs when they provide transparent exposure to the desired sources of return. Avantis funds are expected to be evaluated seriously because of their systematic factor design, but the final universe will not be restricted to Avantis or to RBC Direct Investing commission-free products.
+The investable universe is global, CAD-listed and USD-listed. Broad market funds, factor funds, regional funds, and systematic active equity ETFs all qualify when they provide transparent exposure to the desired sources of return. Avantis funds get serious consideration for their systematic factor design, but the universe is not restricted to Avantis or to RBC Direct Investing commission-free products.
 
 | Exposure Category | Desired Role |
 | --- | --- |
 | Global market beta | Core equity exposure and baseline comparison against broad market-cap-weighted alternatives. |
 | United States equity | Major developed-market equity exposure and primary reference-market comparison through the S&P 500. |
+| Canadian equity | A deliberate home allocation of roughly 10% of equity, for currency alignment with future CAD spending and dividend-tax efficiency. Held well below the ~25% home bias built into Canadian all-in-one ETFs, which is more Canada than this policy wants. |
 | International developed equity | Geographic diversification, valuation diversification, and non-US currency exposure. |
 | Emerging markets equity | Higher expected growth and diversification, with explicit recognition of governance, currency, and volatility risks. |
 | Small-cap and value | Primary academic factor tilts where implementation quality and transaction-cost-aware design are critical. |
@@ -64,21 +65,38 @@ The investable universe is global and may include CAD-listed and USD-listed ETFs
 
 ## 6. Optimization Framework
 
-Policy weights will be informed by three complementary approaches. No single optimizer output will be accepted mechanically. Final weights should emphasize areas where the models agree, where economic intuition is strong, and where implementation vehicles provide credible exposure at reasonable all-in cost.
+Policy weights come from a Black-Litterman framework. The anchor is the global market-capitalization portfolio: the equilibrium prior, which requires no return forecasts. Views are taken from AQR's annual Capital Market Assumptions, with factor-sleeve views built from each vehicle's Fama-French five-factor plus momentum loadings, priced at premia calibrated to AQR's published long-only style estimates. Covariance is estimated from monthly return history with shrinkage.
+
+The adopted view confidence is 35%, deliberately closer to the market prior than to the views. AQR's own error bands allow roughly ±3% per year over a decade, and policy weights should not swing on assumptions that uncertain. Confidence and view sources are revisited annually when AQR publishes updated assumptions; changing either is a documented policy change under Section 12.
 
 | Method | Role in Decision |
 | --- | --- |
-| Historical Sharpe-maximizing MVO | Estimates the unconstrained efficient portfolio from observed return and covariance data, subject to reasonable constraints and shrinkage. |
-| Black-Litterman | Combines market-implied equilibrium returns with explicit views about factor premia and geography to reduce sensitivity to noisy historical means. |
-| Risk parity | Provides a non-return-forecast-dependent reference point and highlights whether MVO results are being driven by aggressive expected-return assumptions. |
-| Covariance estimation | Sample covariance will be compared with shrinkage approaches such as Ledoit-Wolf where data availability permits. |
-| Robustness review | The selected policy portfolio should remain sensible under multiple return assumptions, reasonable covariance perturbations, and borrowing cost stress tests. |
+| Black-Litterman (AQR views) | Produces the policy target weights at the adopted confidence. |
+| Market-cap prior | The no-views anchor, the zero-confidence limit of the framework, and the yardstick for total active risk. |
+| Risk parity and minimum variance | Return-free cross-checks. Material disagreement with the Black-Litterman target triggers a robustness review before implementation. |
+| Robustness review | The target must stay sensible under alternative confidences, covariance perturbations, and borrowing-cost stress. |
+
+### 6.1 Policy Portfolio
+
+Adopted July 2026 from the framework above, using AQR year-end 2025 assumptions at 35% confidence, rounded:
+
+| Block | Policy Weight | Band |
+| --- | --- | --- |
+| US broad equity | 35% | ±5pp |
+| International developed broad | 22% | ±5pp |
+| International developed value | 16% | ±5pp |
+| Canada broad equity | 11% | ±4pp |
+| Emerging markets broad | 8% | ±3pp |
+| Emerging markets value | 5% | ±3pp |
+| US small-cap value / large value | 3% | ±2pp |
+
+Weights apply to the self-directed marketable sleeve on a look-through basis; the delegated core (Section 1) is exogenous. A deviation beyond its band at a scheduled review is corrected first by directing new contributions, then by trades if two review cycles of contributions prove insufficient. The current holdings (XEQT, XUS, AVGE) cannot reach the value-sleeve weights without holding the Avantis sleeves directly. Until that structural decision is made, the value rows are aspirational and this constraint is acknowledged here.
 
 ## 7. Leverage Policy
 
 Leverage is employed through a personal line of credit at an expected rate of prevailing Canadian prime plus 0.50%. Its use is justified only while it improves the expected long-term wealth outcome after financing costs and remains serviceable from employment income without requiring forced asset sales during market stress.
 
-Leverage is sized by balance-sheet limits rather than a volatility ratio. The unlevered portfolio already exhibits near-market volatility, so volatility-matching would prescribe no borrowing and does not describe practice. The target leverage factor is 1.25× equity, with a hard ceiling of 1.50×. New draws require a documented expected Sharpe advantage over the reference market, a current drawdown of less than 20% from peak, and comfortable interest serviceability from employment income. A position above target is corrected by directing contributions to assets rather than new draws — never by forced sales.
+Leverage is sized by balance-sheet limits rather than a volatility ratio. The unlevered portfolio already exhibits near-market volatility, so volatility-matching would prescribe no borrowing and does not describe practice. The target leverage factor is 1.25× equity, with a hard ceiling of 1.50×. New draws require a documented expected Sharpe advantage over the reference market, a current drawdown of less than 20% from peak, and comfortable interest serviceability from employment income. A position above target is corrected by directing contributions to assets rather than new draws, never by forced sales.
 
 | Leverage Control | Policy |
 | --- | --- |
@@ -110,7 +128,7 @@ The S&P 500 is the primary reference benchmark because it is the investor's chos
 | --- | --- |
 | S&P 500 | Primary reference point for long-term opportunity cost and investor-facing performance comparison. |
 | Global all-equity benchmark | Secondary benchmark for evaluating whether global diversification is adding or detracting in context. |
-| Custom policy benchmark | To be created after policy weights are finalized; used to separate implementation performance from strategic allocation choices. |
+| Custom policy benchmark | Section 6.1 weights applied to plain index returns. Splits results into allocation (policy vs S&P 500) and implementation (actual vs policy); the second gap should sit near zero. |
 
 ## 10. Rebalancing and Cash Flow Policy
 
@@ -121,12 +139,12 @@ The portfolio will be reviewed and rebalanced on a fixed schedule, with the exac
 | Account integration | TFSA and FHSA are managed as one portfolio, with asset location handled as an implementation problem. |
 | Contribution deployment | New capital should move toward the policy weights, considering FX, transaction cost, and account room. |
 | Rebalancing cadence | Quarterly or semi-annual fixed schedule; final selection pending implementation analysis. |
-| Tolerance bands | To be defined after policy weights are selected; bands should reflect volatility, tax/account friction, and trading cost. |
+| Tolerance bands | Per Section 6.1, checked at each scheduled review. |
 | FX conversion | Norbert's Gambit or other low-cost FX methods should be evaluated before large CAD-to-USD conversions at RBC Direct Investing. |
 
 ## 11. Factor Exposure Reporting
 
-Factor exposure is reported using returns-based attribution — a Fama-French five-factor model plus momentum — estimated from each holding's return history and aggregated to the portfolio. Holdings-based decomposition (weighted average market capitalization, valuation ratios, profitability, investment characteristics, momentum score, volatility, regional allocation, sector allocation, currency exposure, and emerging market exposure) may be added later as a complementary look-through view.
+Factor exposure is reported two ways: returns-based attribution (a Fama-French five-factor model plus momentum, estimated from each holding's return history and aggregated to the portfolio) and a holdings-based look-through that decomposes the fund-of-funds positions into their underlying regional and style building blocks. The two should broadly agree; where they diverge, the returns-based estimate is treated as the measurement and the look-through as the explanation.
 
 | Exposure | Reporting Intent |
 | --- | --- |
