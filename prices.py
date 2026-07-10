@@ -49,6 +49,14 @@ def get_current_and_prev(symbols) -> pd.DataFrame:
     return pd.DataFrame.from_dict(rows, orient="index")
 
 
+def get_fx_series(period="5y") -> pd.Series:
+    """Daily USD→CAD rate history. Empty series if offline."""
+    hist = get_history(["USDCAD=X"], period=period)
+    if "USDCAD=X" in hist.columns:
+        return hist["USDCAD=X"].dropna()
+    return pd.Series(dtype=float)
+
+
 def get_usd_cad() -> float:
     """Current USD->CAD rate. Falls back to a recent constant if offline."""
     try:

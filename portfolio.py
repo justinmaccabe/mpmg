@@ -263,6 +263,48 @@ def benchmark_daily_pct() -> float:
 BENCHMARKS = {"Total Market": "VT", "S&P 500": "^GSPC"}
 
 
+# --- Currency basis -----------------------------------------------------------
+def _is_cad(symbol: str) -> bool:
+    """CAD-denominated if TSX-listed; everything else here trades in USD."""
+    return str(symbol).endswith(".TO")
+
+
+def _fx_for(index, period="5y") -> pd.Series:
+    """USD→CAD series aligned to a price index; constant fallback if offline."""
+    fx = pricelib.get_fx_series(period)
+    if fx.empty:
+        return pd.Series(pricelib.get_usd_cad(), index=index)
+    return fx.reindex(index).ffill().bfill()
+
+
+def hist_in_cad(hist: pd.DataFrame, period="5y") -> pd.DataFrame:
+    """Convert USD-listed columns of a price history to CAD."""
+    if hist.empty:
+        return hist
+    usd_cols = [c for c in hist.columns if not _is_cad(c)]
+    if not usd_cols:
+        return hist
+    out = hist.copy()
+    fx = _fx_for(hist.index, period)
+    for c in usd_cols:
+        out[c] = out[c] * fx
+    return out
+
+
+def hist_in_usd(hist: pd.DataFrame, period="5y") -> pd.DataFrame:
+    """Convert CAD-listed columns of a price history to USD."""
+    if hist.empty:
+        return hist
+    cad_cols = [c for c in hist.columns if _is_cad(c)]
+    if not cad_cols:
+        return hist
+    out = hist.copy()
+    fx = _fx_for(hist.index, period)
+    for c in cad_cols:
+        out[c] = out[c] / fx
+    return out
+
+
 def normalized_performance(symbols, period="1y") -> pd.DataFrame:
     """Daily closes for each symbol, rebased to 100 at the start of the period."""
     symbols = [s for s in dict.fromkeys(symbols) if s]   # de-dupe, keep order
@@ -394,6 +436,7 @@ def _regress_fund(symbol, ff, period):
     px = pricelib.get_history([symbol], period=period)
     if px.empty or symbol not in px.columns:
         return None
+    px = hist_in_usd(px, period)     # FF factors are USD; CAD funds must match
     monthly = px[symbol].resample("ME").last().pct_change().dropna()
     monthly.index = monthly.index.to_period("M").to_timestamp("M")
     d = ff.copy()
@@ -615,6 +658,7 @@ def black_litterman_target(period="5y", confidence=0.5) -> dict:
     labels = [u[0] for u in BL_UNIVERSE]
     proxies = {u[0]: u[1] for u in BL_UNIVERSE}
     hist = pricelib.get_history(list(proxies.values()), period=period)
+    hist = hist_in_cad(hist, period)          # common CAD basis across the universe
     if hist.empty:
         return {}
     monthly = hist.resample("ME").last().pct_change(fill_method=None)
@@ -699,6 +743,129 @@ def policy_benchmark(period="1y") -> pd.Series:
     return value / value.iloc[0] * 100
 
 
+# --- Performance measurement (PM suite) --------------------------------------
+def twr_series(snapshots: pd.DataFrame) -> pd.Series:
+    """True time-weighted return index from recorded daily P&L percentages.
+
+    daily_pnl_pct is price-move-only (shares × price change), so contributions
+    never register as return. Chain-linked, rebased to 100 at tracking start.
+    """
+    if snapshots is None or snapshots.empty or "daily_pnl_pct" not in snapshots:
+        return pd.Series(dtype=float)
+    s = snapshots.dropna(subset=["daily_pnl_pct"]).copy()
+    if s.empty:
+        return pd.Series(dtype=float)
+    s["date"] = pd.to_datetime(s["date"])
+    s = s.sort_values("date").set_index("date")
+    return (1 + s["daily_pnl_pct"].astype(float)).cumprod() * 100
+
+
+def xirr(flows) -> float:
+    """Annualized money-weighted return via bisection.
+
+    flows: list of (date, amount); negative = money in, positive = value out.
+    Returns None when a root can't be bracketed (e.g. all one sign).
+    """
+    flows = sorted(flows, key=lambda f: f[0])
+    if len(flows) < 2:
+        return None
+    amts = [a for _, a in flows]
+    if all(a >= 0 for a in amts) or all(a <= 0 for a in amts):
+        return None
+    d0 = flows[0][0]
+
+    def npv(rate):
+        return sum(a / (1 + rate) ** ((d - d0).days / 365.25) for d, a in flows)
+
+    lo, hi = -0.95, 10.0
+    f_lo, f_hi = npv(lo), npv(hi)
+    if f_lo * f_hi > 0:
+        return None
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        f_mid = npv(mid)
+        if abs(f_mid) < 1e-8:
+            return mid
+        if f_lo * f_mid < 0:
+            hi = mid
+        else:
+            lo, f_lo = mid, f_mid
+    return (lo + hi) / 2
+
+
+def money_weighted_return(contribs: pd.DataFrame, market_value: float) -> dict:
+    """XIRR from recorded contributions to today's total value."""
+    if contribs is None or contribs.empty or not market_value:
+        return {}
+    flows = [(pd.Timestamp(d).date(), -float(a))
+             for d, a in zip(contribs["date"], contribs["amount"])]
+    today = dt.date.today()
+    flows = [f for f in flows if f[0] <= today]
+    flows.append((today, float(market_value)))
+    total_in = float(contribs["amount"].sum())
+    return {"xirr": xirr(flows), "contributed": total_in,
+            "growth": float(market_value) - total_in,
+            "since": min(f[0] for f in flows)}
+
+
+def calendar_returns(tx, instruments, period="5y") -> pd.DataFrame:
+    """Monthly return grid (years × months + Year column), modeled: current
+    holdings backtested in CAD, OPO excluded."""
+    pp = portfolio_performance(tx, instruments, period)
+    if pp.empty:
+        return pd.DataFrame()
+    m = pp.resample("ME").last().pct_change().dropna()
+    if m.empty:
+        return pd.DataFrame()
+    df = pd.DataFrame({"year": m.index.year, "month": m.index.month, "ret": m.values})
+    grid = df.pivot(index="year", columns="month", values="ret")
+    grid = grid.reindex(columns=range(1, 13))
+    grid.columns = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    grid["Year"] = (1 + grid.fillna(0)).prod(axis=1) - 1
+    return grid
+
+
+# --- Next-dollar allocator (trader tool) --------------------------------------
+# §6.1 policy on the sleeve basis used by current_block_weights.
+POLICY_SLEEVES = {"AVUS": 0.35, "AVDE": 0.22, "AVIV": 0.16, "Canada Market": 0.11,
+                  "AVEM": 0.08, "AVES": 0.05, "AVUV": 0.015, "AVLV": 0.015}
+SLEEVE_VEHICLE = {"AVUS": "XUS / AVUS", "AVDE": "AVDE", "AVIV": "AVIV",
+                  "Canada Market": "XIC", "AVEM": "AVEM", "AVES": "AVES",
+                  "AVUV": "AVUV", "AVLV": "AVLV"}
+
+
+def next_dollar(positions, instruments, amount: float) -> pd.DataFrame:
+    """Buy-only allocation of new cash toward the §6.1 policy weights.
+
+    Computes each sleeve's dollar shortfall against the policy at the post-
+    contribution total and splits the contribution pro-rata across shortfalls —
+    the fastest buy-only path back toward policy (never sells).
+    """
+    if amount <= 0:
+        return pd.DataFrame()
+    cur = current_block_weights(positions, instruments)
+    inst = instruments.set_index("ticker")
+    mkt_mv = float(sum(
+        p["Market Value"] for _, p in positions.iterrows()
+        if p["Ticker"] in inst.index and not inst.loc[p["Ticker"], "is_private"]))
+    if mkt_mv <= 0:
+        return pd.DataFrame()
+    total_after = mkt_mv + amount
+    rows = []
+    for sleeve, w_pol in POLICY_SLEEVES.items():
+        cur_d = cur.get(sleeve, 0.0) * mkt_mv
+        need = max(0.0, w_pol * total_after - cur_d)
+        rows.append({"sleeve": sleeve, "current_w": cur_d / mkt_mv,
+                     "policy_w": w_pol, "need": need})
+    total_need = sum(r["need"] for r in rows)
+    for r in rows:
+        r["buy"] = amount * r["need"] / total_need if total_need > 0 else 0.0
+        r["vehicle"] = SLEEVE_VEHICLE.get(r["sleeve"], r["sleeve"])
+    out = pd.DataFrame(rows).sort_values("buy", ascending=False)
+    return out[out["buy"] > 0.005]
+
+
 # --- Risk & return statistics (PortfolioVisualizer-style suite) -------------
 def risk_stats(tx, instruments, period="3y") -> dict:
     """Monthly risk/return metrics for the modeled portfolio vs the benchmark.
@@ -755,7 +922,7 @@ def risk_stats(tx, instruments, period="3y") -> dict:
     cvar = float(-np.mean(tail)) if len(tail) else None
 
     beta = alpha_ann = r2 = corr = te = ir = active = treynor = m2 = None
-    up_cap = down_cap = None
+    up_cap = down_cap = bench_sharpe = None
     if len(both) >= 6:
         pv, bv = both["p"].values, both["b"].values
         rf_b = rf.reindex(both.index).fillna(0.0).values
@@ -776,6 +943,8 @@ def risk_stats(tx, instruments, period="3y") -> dict:
         ir = active / te if te and te > 0 else None
         if sharpe is not None and vb > 0:
             m2 = sharpe * vb * np.sqrt(ann) + float(np.mean(rf_b)) * ann
+        if vb > 0:
+            bench_sharpe = float(np.mean(be)) * ann / (vb * np.sqrt(ann))
         up_m, dn_m = bv > 0, bv < 0
         if up_m.any() and float(np.mean(bv[up_m])):
             up_cap = float(np.mean(pv[up_m]) / np.mean(bv[up_m]))
@@ -796,7 +965,8 @@ def risk_stats(tx, instruments, period="3y") -> dict:
         "Maximum drawdown": mdd,
         "Benchmark correlation": corr, "Beta": beta,
         "Alpha (annualized)": alpha_ann, "R²": r2,
-        "Sharpe ratio": sharpe, "Sortino ratio": sortino,
+        "Sharpe ratio": sharpe, "Benchmark Sharpe": bench_sharpe,
+        "Sortino ratio": sortino,
         "Treynor ratio (%)": treynor * 100 if treynor is not None else None,
         "Calmar ratio": calmar,
         "Modigliani–Modigliani (M²)": m2,
@@ -818,6 +988,7 @@ def block_correlation(period="5y") -> pd.DataFrame:
     """Correlation matrix of monthly returns across the BL opportunity set."""
     proxies = {u[0]: u[1] for u in BL_UNIVERSE}
     hist = pricelib.get_history(list(proxies.values()), period=period)
+    hist = hist_in_cad(hist, period)          # common CAD basis across the universe
     if hist.empty:
         return pd.DataFrame()
     monthly = hist.resample("ME").last().pct_change(fill_method=None)
@@ -838,6 +1009,7 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
     labels = [u[0] for u in BL_UNIVERSE]
     proxies = {u[0]: u[1] for u in BL_UNIVERSE}
     hist = pricelib.get_history(list(proxies.values()), period=period)
+    hist = hist_in_cad(hist, period)          # common CAD basis across the universe
     if hist.empty:
         return {}
     monthly = hist.resample("ME").last().pct_change(fill_method=None)
@@ -938,8 +1110,7 @@ def portfolio_performance(tx, instruments, period="1y") -> pd.Series:
     """
     pos = compute_positions(tx)
     inst = instruments.set_index("ticker")
-    usd_cad = pricelib.get_usd_cad()
-    legs = []  # (yf_symbol, shares, fx)
+    legs = []  # (yf_symbol, shares)
     for _, p in pos.iterrows():
         t = p["ticker"]
         if t not in inst.index or p["shares"] == 0:
@@ -947,17 +1118,17 @@ def portfolio_performance(tx, instruments, period="1y") -> pd.Series:
         meta = inst.loc[t]
         if meta["is_private"] or not meta["yf_symbol"]:
             continue
-        legs.append((meta["yf_symbol"], p["shares"],
-                     usd_cad if meta["currency"] == "USD" else 1.0))
+        legs.append((meta["yf_symbol"], p["shares"]))
     if not legs:
         return pd.Series(dtype=float)
-    hist = pricelib.get_history([s for s, _, _ in legs], period=period)
+    hist = pricelib.get_history([s for s, _ in legs], period=period)
     if hist.empty:
         return pd.Series(dtype=float)
+    hist = hist_in_cad(hist, period)     # true CAD basis: FX moves are returns
     value = None
-    for sym, shares, fx in legs:
+    for sym, shares in legs:
         if sym in hist.columns:
-            leg = hist[sym] * shares * fx
+            leg = hist[sym] * shares
             value = leg if value is None else value.add(leg)
     value = value.dropna() if value is not None else pd.Series(dtype=float)
     if value.empty:

@@ -14,12 +14,13 @@ import streamlit as st
 
 import db
 import portfolio
+import prices as pricelib
 
 # Streamlit Cloud re-pulls the repo on deploy but can keep a warm Python process,
 # leaving sibling modules stale in sys.modules (app.py re-runs, portfolio.py does
 # not). Reload it when a newly-added symbol is missing so feature additions land
 # without a manual container reboot.
-if not hasattr(portfolio, "policy_benchmark"):
+if not hasattr(portfolio, "next_dollar"):
     importlib.reload(portfolio)
 
 st.set_page_config(page_title="Maccabe Portfolio Management Group",
@@ -102,14 +103,6 @@ def holdings_sig():
 
 
 @st.cache_data(ttl=3600)
-def load_corr(sig):
-    pos, _ = load_portfolio()
-    held = set(pos[pos["Shares"] > 0]["Ticker"]) if not pos.empty else set()
-    inst = db.get_instruments_df()
-    return portfolio.correlation_matrix(inst[inst["ticker"].isin(held)])
-
-
-@st.cache_data(ttl=3600)
 def perf_all(period):
     inst = db.get_instruments_df()
     holds = inst[(~inst["is_private"]) & inst["yf_symbol"].notna()]
@@ -165,6 +158,18 @@ def load_block_corr(period):
 @st.cache_data(ttl=3600)
 def load_policy_benchmark(period):
     return portfolio.policy_benchmark(period)
+
+
+@st.cache_data(ttl=86400)
+def load_calendar(sig):
+    return portfolio.calendar_returns(db.get_transactions_df(),
+                                      db.get_instruments_df(), "5y")
+
+
+@st.cache_data(ttl=900)
+def load_quote_asof():
+    h = pricelib.get_history(["VT"], period="5d")
+    return h.index[-1] if len(h) else None
 
 
 @st.cache_data(ttl=86400)
@@ -459,6 +464,35 @@ def render_overview():
                            "Daily P&L $": fmt_money0})
                   .map(color_pnl, subset=["Gain/Loss $", "Gain/Loss %", "Daily P&L $"]))
         st.dataframe(styler, width="stretch", hide_index=True)
+        asof = load_quote_asof()
+        if asof is not None:
+            st.caption(f"Market data as of {asof:%b %d, %Y} close "
+                       "(TSX symbols can lag a session).")
+
+    # ---- Performance measurement --------------------------------------------
+    st.subheader("Performance Measurement")
+    twr = portfolio.twr_series(db.get_snapshots_df())
+    mw = (portfolio.money_weighted_return(db.get_contributions_df(),
+                                          totals.get("market_value"))
+          if totals else {})
+    m1, m2, m3, m4 = st.columns(4)
+    if len(twr) >= 2:
+        m1.metric(f"TWR since {twr.index[0]:%b %d, %Y}",
+                  f"{twr.iloc[-1] / 100 - 1:+.2%}",
+                  help="Time-weighted: chain-linked daily price returns. "
+                       "Deposits never move this number.")
+    else:
+        m1.metric("Time-weighted return", "—")
+    if mw.get("xirr") is not None:
+        m2.metric("Money-weighted (XIRR)", f"{mw['xirr']:+.2%}",
+                  help=f"Annualized return on your actual dollars, from recorded "
+                       f"contributions since {mw['since']:%b %Y}.")
+    else:
+        m2.metric("Money-weighted (XIRR)", "—")
+    m3.metric("Contributed to date", fmt_money0(mw.get("contributed"))
+              if mw else "—")
+    m4.metric("Investment growth", fmt_money0(mw.get("growth")) if mw else "—",
+              help="Current value minus contributions: the part the market earned.")
 
     c1, c2 = st.columns([3, 2])
     with c1:
@@ -836,6 +870,20 @@ def render_benchmarks():
                "proxies, daily rebalanced; its history starts at the youngest proxy. "
                "Benchmarks: Total Market (VT) and S&P 500 (^GSPC).")
 
+    st.markdown("##### Calendar Returns")
+    try:
+        cal = load_calendar(holdings_sig())
+    except Exception:
+        cal = pd.DataFrame()
+    if not cal.empty:
+        st.dataframe(
+            cal.style.format(lambda v: "—" if pd.isna(v) else f"{v:+.1%}",
+                             na_rep="—").map(color_pnl),
+            width="stretch")
+        st.caption("Monthly returns, current holdings backtested in CAD (OPO "
+                   "excluded). 'Year' compounds the months shown; the first and "
+                   "last rows are partial years.")
+
 
 def render_factor():
     st.subheader("Factor Exposure")
@@ -879,16 +927,37 @@ def render_factor():
 
 
 def render_correlations():
-    st.subheader("Correlation of Daily Returns (~1Y)")
-    corr = load_corr(holdings_sig())
-    if corr.empty:
-        st.warning("Price history is currently unavailable. Please retry shortly.")
+    st.subheader("Correlation Matrix — Building Blocks")
+    try:
+        bc = load_block_corr("5y")
+    except Exception:
+        bc = pd.DataFrame()
+    if bc.empty:
+        st.warning("Correlation data is currently unavailable. Please retry shortly.")
         return
-    fig = px.imshow(corr, text_auto=".2f", color_continuous_scale="RdBu",
-                    zmin=-1, zmax=1, aspect="auto")
-    show(style_fig(fig, 440, legend=False))
-    st.caption("1.0 = perfectly correlated · 0 = uncorrelated · negative = inversely "
-               "correlated. OPO (private) is excluded — no market data.")
+    labels = list(bc.columns)
+    k = len(labels)
+    z, txt = [], []
+    for i in range(1, k):            # lower triangle only, diagonal dropped
+        z.append([bc.values[i][j] if j < i else None for j in range(k - 1)])
+        txt.append([f"{bc.values[i][j]:.2f}" if j < i else ""
+                    for j in range(k - 1)])
+    fig = go.Figure(go.Heatmap(
+        z=z, x=labels[:-1], y=labels[1:],
+        zmin=0, zmax=1,
+        colorscale=[[0.0, "#1B2433"], [0.5, "#4F6D8F"], [1.0, "#A88620"]],
+        text=txt, texttemplate="%{text}",
+        textfont=dict(size=12, color="#F4F4F4"),
+        hoverongaps=False, showscale=False,
+        hovertemplate="%{y} × %{x}: %{z:.2f}<extra></extra>"))
+    fig = style_fig(fig, 560, legend=False)
+    fig.update_yaxes(autorange="reversed")
+    show(fig)
+    st.caption("Monthly returns over five years (or each pair's common history), all "
+               "in CAD. Darker = more diversifying. The genuine diversifiers are the "
+               "international, EM, and Canadian sleeves; the US factor sleeves "
+               "correlate highly with US broad beta — their case rests on the return "
+               "premium, not decorrelation. OPO (private) is excluded.")
 
 
 # Factor / exposure each underlying building block targets (display labels).
@@ -980,38 +1049,6 @@ def render_lookthrough():
                "~0% (they duplicate that beta); the value, small-cap, real-estate, and "
                "international-value sleeves now carry positive targets. **Δ vs target** is "
                "your active bet.")
-
-    st.markdown("##### Correlation Matrix — Building Blocks")
-    try:
-        bc = load_block_corr("5y")
-    except Exception:
-        bc = pd.DataFrame()
-    if not bc.empty:
-        labels = list(bc.columns)
-        k = len(labels)
-        z, txt = [], []
-        for i in range(1, k):            # lower triangle only, diagonal dropped
-            z.append([bc.values[i][j] if j < i else None for j in range(k - 1)])
-            txt.append([f"{bc.values[i][j]:.2f}" if j < i else ""
-                        for j in range(k - 1)])
-        fig = go.Figure(go.Heatmap(
-            z=z, x=labels[:-1], y=labels[1:],
-            zmin=0, zmax=1,
-            colorscale=[[0.0, "#1B2433"], [0.5, "#4F6D8F"], [1.0, "#A88620"]],
-            text=txt, texttemplate="%{text}",
-            textfont=dict(size=12, color="#F4F4F4"),
-            hoverongaps=False, showscale=False,
-            hovertemplate="%{y} × %{x}: %{z:.2f}<extra></extra>"))
-        fig = style_fig(fig, 520, legend=False)
-        fig.update_yaxes(autorange="reversed")
-        show(fig)
-        st.caption("Monthly return correlations, five years (or each pair's common "
-                   "history). Darker = more diversifying. The genuine diversifiers are "
-                   "the international, EM, and Canadian sleeves; the US factor sleeves "
-                   "correlate highly with US broad beta — their case rests on the return "
-                   "premium, not decorrelation.")
-    else:
-        st.caption("Correlation data is currently unavailable.")
 
     # ---- Phase 2: optimized target & gaps -------------------------------
     st.divider()
@@ -1173,26 +1210,17 @@ def render_leverage():
     c2.metric("Equity", money(lev["equity"]))
     c3.metric("Gross exposure", money(lev["gross_exposure"]))
     c4.metric("LOC rate", f"{lev['loc_rate'] * 100:.2f}%")
-    try:
-        pp = perf_portfolio("3y")
-        mdd = portfolio.max_drawdown(pp) if not pp.empty else None
-    except Exception:
-        mdd = None
     # actual experienced drawdown — worst peak-to-trough of the recorded
-    # close-value snapshot history (vs the 3Y backtest of current holdings)
+    # close-value snapshot history (the modeled figure lives in the stats table)
     exp_mdd = portfolio.max_drawdown(snaps["market_value"].dropna()) if len(snaps) else None
-    d1, d2, d3, d4, d5 = st.columns(5)
+    d1, d2, d3, d4 = st.columns(4)
     d1.metric("Annual interest", money(lev["annual_interest"]))
     d2.metric("Monthly interest", money(lev["monthly_interest"]))
     d3.metric("Drawdown from peak", f"{lev['drawdown']:.1%}")
     d4.metric("Max drawdown (recorded)", f"{exp_mdd:.1%}" if exp_mdd is not None else "—")
-    d5.metric("Max drawdown (3Y, modeled)", f"{mdd:.1%}" if mdd is not None else "—")
-    e1, e2, e3 = st.columns(3)
+    e1, _, _ = st.columns(3)
     e1.metric("Est. portfolio yield", f"{yld_pct:.2f}%")
     p_sh, b_sh = sh.get("portfolio"), sh.get("benchmark")
-    e2.metric("Portfolio Sharpe", f"{p_sh:.2f}" if p_sh is not None else "—")
-    e3.metric(f"{sh.get('benchmark_symbol', 'Benchmark')} Sharpe",
-              f"{b_sh:.2f}" if b_sh is not None else "—")
 
     st.markdown("##### IPS flags")
     lf = lev["leverage"]
@@ -1295,6 +1323,24 @@ def render_trade():
                 st.success(f"{pt} marked at ${newp:,.4f}.")
                 st.rerun()
 
+        st.subheader("Next-Dollar Allocator")
+        st.caption("Where new cash should go to move toward the §6.1 policy fastest, "
+                   "buy-only: dollars flow to the largest shortfalls; overweights are "
+                   "never sold, they dilute as the book grows.")
+        nd_amt = st.number_input("New cash to deploy ($)", min_value=0.0,
+                                 value=1000.0, step=100.0, key="nd_amt")
+        if nd_amt > 0:
+            pos_nd, _ = load_portfolio()
+            ndf = portfolio.next_dollar(pos_nd, inst, nd_amt)
+            if not ndf.empty:
+                view = pd.DataFrame({
+                    "Sleeve": ndf["sleeve"], "Vehicle": ndf["vehicle"],
+                    "Current": ndf["current_w"], "Policy": ndf["policy_w"],
+                    "Buy": ndf["buy"]})
+                st.dataframe(view.style.format(
+                    {"Current": "{:.1%}", "Policy": "{:.1%}", "Buy": "${:,.0f}"}),
+                    width="stretch", hide_index=True)
+
         st.subheader("Log a Transaction")
         with st.form("trade", clear_on_submit=True):
             col = st.columns(3)
@@ -1333,9 +1379,15 @@ def render_trade():
 
 
 def render_ips():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ips.md")
+    here = os.path.dirname(os.path.abspath(__file__))
+    pdf_path = os.path.join(here, "ips.pdf")
+    if os.path.exists(pdf_path):
+        with open(pdf_path, "rb") as f:
+            st.download_button("⬇ Download PDF", f.read(),
+                               file_name="MPMG-Investment-Policy-Statement.pdf",
+                               mime="application/pdf")
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(os.path.join(here, "ips.md"), encoding="utf-8") as f:
             st.markdown(f.read())
     except FileNotFoundError:
         st.info("Investment Policy Statement not found (ips.md missing).")
