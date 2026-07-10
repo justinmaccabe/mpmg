@@ -43,6 +43,11 @@ html, body, [class*="css"], .stApp, h1, h2, h3, h4, h5, p, div, span,
 [data-testid="stMetricDelta"], button, input, select, textarea {{
     font-family: {SERIF} !important;
 }}
+/* keep Streamlit's icon font intact (password-reveal eye, expander chevrons):
+   without this the serif override renders icon ligature text, e.g. "visibili" */
+span[data-testid="stIconMaterial"], [class*="material-symbols"], .material-icons {{
+    font-family: "Material Symbols Rounded" !important;
+}}
 /* tabular, lining figures so numbers align in columns — an institutional tell */
 [data-testid="stMetricValue"], [data-testid="stMetricDelta"],
 [data-testid="stDataFrame"], .stDataFrame, table, .mpmg-num {{
@@ -957,7 +962,11 @@ def render_correlations():
                "in CAD. Darker = more diversifying. The genuine diversifiers are the "
                "international, EM, and Canadian sleeves; the US factor sleeves "
                "correlate highly with US broad beta — their case rests on the return "
-               "premium, not decorrelation. OPO (private) is excluded.")
+               "premium, not decorrelation. The held wrappers do not appear as rows "
+               "because they are blends of these blocks: XUS is US broad beta, XEQT "
+               "is a fixed mix of the four regional markets, and AVGE is the ten "
+               "Avantis sleeves — a wrapper row would just restate its ingredients. "
+               "OPO (private) is excluded.")
 
 
 # Factor / exposure each underlying building block targets (display labels).
@@ -1391,6 +1400,23 @@ def render_ips():
             st.markdown(f.read())
     except FileNotFoundError:
         st.info("Investment Policy Statement not found (ips.md missing).")
+
+    ddir = os.path.join(here, "docs", "fund-facts")
+    if os.path.isdir(ddir):
+        files = sorted(f for f in os.listdir(ddir) if f.endswith(".pdf"))
+        if files:
+            st.divider()
+            st.subheader("Document Library")
+            st.caption("Fund facts and fact sheets for held and candidate ETFs — "
+                       "the primary documents behind the §5 universe and the §6.1 "
+                       "structural review.")
+            cols = st.columns(6)
+            for i, fn in enumerate(files):
+                with open(os.path.join(ddir, fn), "rb") as fh:
+                    cols[i % 6].download_button(
+                        fn[:-4].upper(), fh.read(), file_name=fn,
+                        mime="application/pdf", key=f"ff_{fn}",
+                        use_container_width=True)
 
 
 # ============================================================ main

@@ -1051,15 +1051,23 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
     rets = W @ mu
     vols = np.sqrt(np.einsum("ij,jk,ik->i", W, cov, W))
 
-    order = np.argsort(vols)                                    # upper-left envelope
-    fv, fr, best = [], [], -np.inf
+    # Upper concave hull of the candidate cloud — the true frontier shape. A
+    # running-max envelope keeps every marginally-better sample and draws a
+    # staircase; the hull keeps only the vertices that dominate.
+    order = np.argsort(vols)
+    hull = []
     for i in order:
-        if rets[i] > best:
-            best = rets[i]
-            fv.append(float(vols[i]))
-            fr.append(float(rets[i]))
-    f = pd.DataFrame({"vol": fv, "ret": fr})
-    f = f[f["ret"] >= f["ret"].iloc[0]]                         # drop inefficient tail
+        x, y = float(vols[i]), float(rets[i])
+        while len(hull) >= 2:
+            (x1, y1), (x2, y2) = hull[-2], hull[-1]
+            if (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1) >= 0:
+                hull.pop()
+            else:
+                break
+        hull.append((x, y))
+    peak = max(range(len(hull)), key=lambda j: hull[j][1])
+    hull = hull[:peak + 1]                       # stop at max return; no downslope
+    f = pd.DataFrame(hull, columns=["vol", "ret"])
     tang = f.loc[(f["ret"] / f["vol"]).idxmax()] if len(f) else None
 
     def point(w_map):
