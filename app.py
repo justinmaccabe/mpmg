@@ -54,7 +54,7 @@ span[data-testid="stIconMaterial"], [class*="material-symbols"], .material-icons
     font-variant-numeric: tabular-nums lining-nums !important;
     font-feature-settings: "tnum" 1, "lnum" 1 !important;
 }}
-.stApp {{ background: radial-gradient(1200px 600px at 50% -10%, #123A50 0%, #0C2B3C 55%); }}
+.stApp {{ background: radial-gradient(1200px 600px at 50% -10%, #1E2E38 0%, #182730 55%); }}
 #MainMenu, footer {{ visibility: hidden; }}
 
 /* monogram + header */
@@ -247,7 +247,7 @@ def style_fig(fig, height=360, legend=True):
         font=dict(family=SERIF, color="#D8D8D8", size=14),
         colorway=PALETTE, margin=dict(l=10, r=10, t=20, b=10),
         showlegend=legend, legend=dict(orientation="h", y=-0.18),
-        hoverlabel=dict(bgcolor="#0A2536", bordercolor="rgba(201,162,39,.45)",
+        hoverlabel=dict(bgcolor="#0F1A22", bordercolor="rgba(201,162,39,.45)",
                         font=dict(family=SERIF, color="#EAEAEA", size=13)),
     )
     fig.update_xaxes(gridcolor="rgba(255,255,255,.06)", zeroline=False)
@@ -1184,7 +1184,7 @@ def render_lookthrough():
                 fig.add_trace(go.Scatter(
                     x=[pt["vol"]], y=[pt["ret"]], mode="markers", name=name,
                     marker=dict(size=13, color=color, symbol=symbol,
-                                line=dict(width=1, color="#0C2B3C")),
+                                line=dict(width=1, color="#182730")),
                     hovertemplate=f"{name}: σ %{{x:.1%}} · E[r] %{{y:.1%}}"
                                   "<extra></extra>"))
         fig = style_fig(fig, 460)
