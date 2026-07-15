@@ -526,7 +526,7 @@ def render_overview():
             # evenly-spaced category labels — one slot per snapshot, so weekends
             # never create gaps and every point (incl. today) is labelled
             if rule is None:                                   # daily
-                s["_lbl"] = s["date"].dt.strftime("%b %d, %Y")
+                s["_lbl"] = s["date"].dt.strftime("%b %d")
             elif rule == "W":                                  # weekly → Monday
                 monday = s["date"] - pd.to_timedelta(s["date"].dt.weekday, unit="D")
                 s["_lbl"] = ("<span style='font-size:0.72em'>Week of</span><br>"
