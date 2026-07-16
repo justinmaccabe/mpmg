@@ -1,8 +1,8 @@
 """Core portfolio maths: positions from the ledger, valuation, correlations.
 
-Everything is reported in the base currency (CAD). USD holdings are converted at
-the current USD/CAD rate. Note: cost basis is converted at *today's* FX rather than
-the FX on each purchase date — a deliberate simplification for a personal tracker.
+Everything is reported in the base currency (CAD). Market values use the current
+USD/CAD rate; cost basis is frozen at each trade's FX (stored per transaction), so
+book value is a step function and genuine FX gains surface in Gain/Loss.
 """
 import datetime as dt
 
@@ -138,14 +138,21 @@ def compute_positions(tx: pd.DataFrame) -> pd.DataFrame:
 
     signed = tx["shares"] * tx["action"].map({"Buy": 1, "Sell": -1}).fillna(0)
     tx = tx.assign(net=signed)
+    fx = tx["fx_rate"].fillna(1.0) if "fx_rate" in tx.columns else 1.0
 
     out = []
     for ticker, g in tx.groupby("ticker"):
         buys = g[g["action"] == "Buy"]
         buy_shares = buys["shares"].sum()
-        buy_cost = (buys["shares"] * buys["price"] + buys["fees"]).sum()
+        cost_native = buys["shares"] * buys["price"] + buys["fees"]
+        gfx = buys["fx_rate"].fillna(1.0) if "fx_rate" in buys.columns else 1.0
+        buy_cost = cost_native.sum()                       # native currency
+        buy_cost_cad = (cost_native * gfx).sum()           # CAD at trade-date FX
         acb = buy_cost / buy_shares if buy_shares else 0.0
-        rec = {"ticker": ticker, "shares": g["net"].sum(), "acb": acb}
+        acb_cad = buy_cost_cad / buy_shares if buy_shares else 0.0
+        net = g["net"].sum()
+        rec = {"ticker": ticker, "shares": net, "acb": acb,
+               "book_cad": net * acb_cad}                  # cost basis frozen in CAD
         for acct in ("FHSA", "TFSA"):
             rec[acct] = g[g["account"] == acct]["net"].sum()
         out.append(rec)
@@ -198,7 +205,9 @@ def build_portfolio(tx: pd.DataFrame, instruments: pd.DataFrame):
 
         shares = p["shares"]
         mv = shares * price * fx
-        book = shares * p["acb"] * fx
+        # cost basis is frozen at trade-date FX (book_cad), not revalued daily;
+        # market value uses today's FX, so genuine FX gains show in Gain/Loss
+        book = p["book_cad"] if pd.notna(p.get("book_cad")) else shares * p["acb"] * fx
         daily = shares * (price - prev) * fx
         rows.append({
             "Ticker": t, "Account": _accounts(p),

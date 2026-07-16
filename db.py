@@ -10,9 +10,11 @@ import datetime as dt
 import pandas as pd
 from sqlalchemy import (
     create_engine, MetaData, Table, Column, Integer, String, Float, Date,
-    Boolean, select, func,
+    Boolean, select, func, inspect, text,
 )
 from sqlalchemy.exc import OperationalError
+
+import prices as pricelib
 
 # Seed: your current holdings, lifted from the original spreadsheet.
 SEED_INSTRUMENTS = [
@@ -99,6 +101,7 @@ transactions = Table(
     Column("shares", Float, nullable=False, default=0.0),
     Column("price", Float, nullable=False, default=0.0),
     Column("fees", Float, nullable=False, default=0.0),
+    Column("fx_rate", Float),                     # USD→CAD at trade date (1.0 if CAD)
 )
 
 snapshots = Table(
@@ -166,9 +169,46 @@ def init_db(seed: bool = True):
             time.sleep(2)
 
 
+def _migrate():
+    """Additive schema migrations for databases created before a column existed."""
+    existing = {c["name"] for c in inspect(engine).get_columns("transactions")}
+    if "fx_rate" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE transactions ADD COLUMN fx_rate FLOAT"))
+
+
+def _backfill_fx():
+    """Populate trade-date USD→CAD on any transaction missing it: the historical
+    rate on the trade date for USD instruments, 1.0 for CAD."""
+    with engine.begin() as conn:
+        rows = conn.execute(select(transactions.c.id, transactions.c.ticker,
+                                   transactions.c.date)
+                            .where(transactions.c.fx_rate.is_(None))).fetchall()
+    if not rows:
+        return
+    inst = get_instruments_df().set_index("ticker")
+    fx_hist = pricelib.get_fx_series("10y")
+    cur_fx = pricelib.get_usd_cad()
+
+    def fx_on(d):
+        if fx_hist is None or fx_hist.empty:
+            return cur_fx
+        upto = fx_hist[fx_hist.index <= pd.Timestamp(d)]
+        return float(upto.iloc[-1]) if len(upto) else float(fx_hist.iloc[0])
+
+    with engine.begin() as conn:
+        for rid, ticker, d in rows:
+            ccy = inst.loc[ticker, "currency"] if ticker in inst.index else "CAD"
+            fx = fx_on(d) if ccy == "USD" else 1.0
+            conn.execute(transactions.update()
+                         .where(transactions.c.id == rid).values(fx_rate=float(fx)))
+
+
 def _init_db(seed: bool = True):
     metadata.create_all(engine)
+    _migrate()
     if not seed:
+        _backfill_fx()
         return
     with engine.begin() as conn:
         if conn.execute(select(func.count()).select_from(instruments)).scalar() == 0:
@@ -188,6 +228,7 @@ def _init_db(seed: bool = True):
         if conn.execute(select(func.count()).select_from(settings)).scalar() == 0:
             conn.execute(settings.insert(), [
                 dict(key=k, value=v) for k, v in SEED_SETTINGS.items()])
+    _backfill_fx()
 
 
 # ---- read helpers -------------------------------------------------
@@ -205,10 +246,14 @@ def get_snapshots_df() -> pd.DataFrame:
 
 # ---- write helpers ------------------------------------------------
 def add_transaction(date, ticker, account, action, shares, price, fees=0.0):
+    inst = get_instruments_df().set_index("ticker")
+    ccy = inst.loc[ticker, "currency"] if ticker in inst.index else "CAD"
+    fx = pricelib.get_usd_cad() if ccy == "USD" else 1.0
     with engine.begin() as conn:
         conn.execute(transactions.insert().values(
             date=date, ticker=ticker, account=account, action=action,
             shares=float(shares), price=float(price), fees=float(fees),
+            fx_rate=float(fx),
         ))
 
 
