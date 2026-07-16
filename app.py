@@ -20,6 +20,8 @@ import prices as pricelib
 # leaving sibling modules stale in sys.modules (app.py re-runs, portfolio.py does
 # not). Reload it when a newly-added symbol is missing so feature additions land
 # without a manual container reboot.
+if not hasattr(db, "get_cash"):
+    importlib.reload(db)
 if not hasattr(portfolio, "next_dollar"):
     importlib.reload(portfolio)
 
@@ -292,7 +294,8 @@ def kpi_ribbon():
     gl, glp = totals["gain_loss"], totals["gain_loss_pct"]
     dp, dpp = totals["daily_pnl"], totals["daily_pnl_pct"]
     items = [
-        ("Total Value", amt(totals["market_value"]), "", "#F4F4F4"),
+        ("Total Value", amt(totals.get("total_value", totals["market_value"])),
+         "", "#F4F4F4"),
         ("Today", amt(dp), f"{dpp:+.2%}", POS if dp >= 0 else NEG),
         ("Total Gain / Loss", amt(gl), f"{glp:+.2%}", POS if gl >= 0 else NEG),
         ("Book Value", amt(totals["book_value"]), "", "#F4F4F4"),
@@ -690,7 +693,7 @@ def render_accounts():
     if not totals:
         st.info("No positions yet.")
         return
-    amv = totals["account_mv"]
+    amv = totals.get("account_total", totals["account_mv"])
     tot = amv["FHSA"] + amv["TFSA"]
     c1, c2, c3 = st.columns(3)
     c1.metric("FHSA Balance", money(amv["FHSA"]),
@@ -698,6 +701,11 @@ def render_accounts():
     c2.metric("TFSA Balance", money(amv["TFSA"]),
               f"{amv['TFSA'] / tot:.1%} of total" if tot else None, delta_color="off")
     c3.metric("Combined", money(tot))
+    cash = totals.get("cash_by_account", {})
+    if cash:
+        st.caption(f"Includes uninvested cash — FHSA {money(cash.get('FHSA', 0))}, "
+                   f"TFSA {money(cash.get('TFSA', 0))} (RBC + NBIN). "
+                   "Balances above are securities plus cash.")
 
     left, right = st.columns(2)
     with left:
@@ -1350,6 +1358,22 @@ def render_trade():
                 db.set_manual_price(pt, newp)
                 st.cache_data.clear()
                 st.success(f"{pt} marked at ${newp:,.4f}.")
+                st.rerun()
+
+        st.subheader("Cash Balances")
+        st.caption("Uninvested cash by account (TFSA combines RBC and NBIN). Keeps "
+                   "total value tied to the brokerages; excluded from allocation math.")
+        cur_cash = db.get_cash()
+        with st.form("cash"):
+            cc = st.columns(2)
+            fh = cc[0].number_input("FHSA cash ($)", value=float(cur_cash.get("FHSA", 0)),
+                                    min_value=0.0, step=10.0, format="%.2f")
+            tf = cc[1].number_input("TFSA cash ($)", value=float(cur_cash.get("TFSA", 0)),
+                                    min_value=0.0, step=10.0, format="%.2f")
+            if st.form_submit_button("Save cash"):
+                db.set_cash("FHSA", fh)
+                db.set_cash("TFSA", tf)
+                st.cache_data.clear()
                 st.rerun()
 
         st.subheader("Next-Dollar Allocator")

@@ -229,13 +229,25 @@ def build_portfolio(tx: pd.DataFrame, instruments: pd.DataFrame):
         mv = df["Market Value"].sum()
         bv = df["Book Value"].sum()
         dp = df["Daily P&L $"].sum()
+        try:
+            cash = db.get_cash()
+        except Exception:
+            cash = {}
+        cash_total = float(sum(cash.values()))
         totals = {
-            "market_value": mv, "book_value": bv,
+            "market_value": mv, "book_value": bv,     # securities only (analytics use this)
             "gain_loss": mv - bv,
             "gain_loss_pct": (mv - bv) / bv if bv else 0.0,
             "daily_pnl": dp,
             "daily_pnl_pct": dp / (mv - dp) if (mv - dp) else 0.0,
+            "cash": cash_total,
+            "total_value": mv + cash_total,           # securities + uninvested cash
+            "cash_by_account": cash,
             "account_mv": {"FHSA": df["MV FHSA"].sum(), "TFSA": df["MV TFSA"].sum()},
+            "account_total": {
+                "FHSA": df["MV FHSA"].sum() + float(cash.get("FHSA", 0.0)),
+                "TFSA": df["MV TFSA"].sum() + float(cash.get("TFSA", 0.0)),
+            },
         }
     return df, totals
 

@@ -52,11 +52,10 @@ TFSA_ANNUAL_LIMITS = {
 }
 
 # Seed contributions (loaded once; edit in-app afterward). Confirmed with you:
-#   RBC TFSA: $6,500 (2025) + $3,000 (2026) · FHSA: $16,000 (2026)
-#   OPO (Optimize TFSA): $500/mo, assumed from Jan 2025 — adjust if different.
+#   RBC TFSA: $10,000 total · FHSA: $16,000 · OPO (NBIN/Optimize TFSA): $500/mo.
 SEED_CONTRIBUTIONS = [
     (dt.date(2026, 1, 15), "TFSA", 6500.0, "RBC TFSA"),
-    (dt.date(2026, 3, 1), "TFSA", 3000.0, "RBC TFSA"),
+    (dt.date(2026, 3, 1), "TFSA", 3500.0, "RBC TFSA"),
     (dt.date(2026, 2, 1), "FHSA", 16000.0, "FHSA lump"),
 ]
 
@@ -122,6 +121,16 @@ settings = Table(
     Column("key", String, primary_key=True),
     Column("value", Float),
 )
+
+cash = Table(                                 # uninvested cash balance per account
+    "cash", metadata,
+    Column("account", String, primary_key=True),   # FHSA / TFSA
+    Column("amount", Float, nullable=False, default=0.0),
+)
+
+# Seed cash balances (editable in-app). FHSA = RBC FHSA; TFSA = RBC TFSA + NBIN
+# (Optimize) TFSA cash combined, since the app models one TFSA bucket.
+SEED_CASH = {"FHSA": 228.08, "TFSA": 61.31 + 58.43}
 
 # Leverage defaults — all editable in-app. Prime is a starting value: update it
 # to the current Canadian prime (the IPS forbids relying on a stale rate).
@@ -228,6 +237,9 @@ def _init_db(seed: bool = True):
         if conn.execute(select(func.count()).select_from(settings)).scalar() == 0:
             conn.execute(settings.insert(), [
                 dict(key=k, value=v) for k, v in SEED_SETTINGS.items()])
+        if conn.execute(select(func.count()).select_from(cash)).scalar() == 0:
+            conn.execute(cash.insert(), [
+                dict(account=a, amount=v) for a, v in SEED_CASH.items()])
     _backfill_fx()
 
 
@@ -287,6 +299,17 @@ def set_settings(values: dict):
         for k, v in values.items():
             conn.execute(settings.delete().where(settings.c.key == k))
             conn.execute(settings.insert().values(key=k, value=float(v)))
+
+
+def get_cash() -> dict:
+    df = pd.read_sql(select(cash), engine)
+    return dict(zip(df["account"], df["amount"])) if not df.empty else dict(SEED_CASH)
+
+
+def set_cash(account, amount):
+    with engine.begin() as conn:
+        conn.execute(cash.delete().where(cash.c.account == account))
+        conn.execute(cash.insert().values(account=account, amount=float(amount)))
 
 
 def set_last_price(ticker, price):
