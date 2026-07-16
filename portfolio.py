@@ -13,6 +13,10 @@ import db
 import prices as pricelib
 from db import BASE_CURRENCY, BENCHMARK_SYMBOL
 
+# Bumped when build_portfolio's totals gain a field the app depends on; the app's
+# reload guard keys on this so a warm container picks up the new module.
+TOTALS_HAS_CASH = True
+
 
 def max_drawdown(series) -> float:
     """Worst peak-to-trough decline of a value series (negative number)."""

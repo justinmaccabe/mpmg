@@ -22,7 +22,7 @@ import prices as pricelib
 # without a manual container reboot.
 if not hasattr(db, "get_cash"):
     importlib.reload(db)
-if not hasattr(portfolio, "next_dollar"):
+if not getattr(portfolio, "TOTALS_HAS_CASH", False):
     importlib.reload(portfolio)
 
 st.set_page_config(page_title="Maccabe Portfolio Management Group",
@@ -490,8 +490,9 @@ def render_overview():
     # ---- Performance measurement --------------------------------------------
     st.subheader("Performance Measurement")
     twr = portfolio.twr_series(db.get_snapshots_df())
-    mw = (portfolio.money_weighted_return(db.get_contributions_df(),
-                                          totals.get("total_value"))
+    mw = (portfolio.money_weighted_return(
+              db.get_contributions_df(),
+              totals.get("total_value") or totals.get("market_value"))
           if totals else {})
     m1, m2, m3, m4 = st.columns(4)
     if len(twr) >= 2:
