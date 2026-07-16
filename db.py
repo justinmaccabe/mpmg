@@ -152,10 +152,12 @@ contributions = Table(
 
 
 def _seed_contribution_rows():
-    """One-time contributions seed, incl. the OPO $500/mo series to this month."""
+    """One-time contributions seed, incl. the OPO (NBIN/Optimize TFSA) $500/mo
+    series. Starts Dec 2024 so it totals $10,000 with $6,500 in prior years and
+    $3,500 YTD 2026 — matching the NBIN contribution record."""
     rows = [dict(date=d, account=a, amount=amt, note=n)
             for (d, a, amt, n) in SEED_CONTRIBUTIONS]
-    y, m = 2025, 1
+    y, m = 2024, 12
     today = dt.date.today()
     while (y, m) <= (today.year, today.month):
         rows.append(dict(date=dt.date(y, m, 1), account="TFSA", amount=500.0,

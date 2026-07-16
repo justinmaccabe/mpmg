@@ -491,7 +491,7 @@ def render_overview():
     st.subheader("Performance Measurement")
     twr = portfolio.twr_series(db.get_snapshots_df())
     mw = (portfolio.money_weighted_return(db.get_contributions_df(),
-                                          totals.get("market_value"))
+                                          totals.get("total_value"))
           if totals else {})
     m1, m2, m3, m4 = st.columns(4)
     if len(twr) >= 2:
