@@ -211,7 +211,10 @@ def build_portfolio(tx: pd.DataFrame, instruments: pd.DataFrame):
         daily = shares * (price - prev) * fx
         rows.append({
             "Ticker": t, "Account": _accounts(p),
-            "Shares": shares, "ACB": p["acb"], "Price": price, "Cur": cur,
+            # ACB and Price shown in CAD (book/shares, quote×FX) so the table
+            # matches the RBC portal; Cur marks the fund's listing currency
+            "Shares": shares, "ACB": (book / shares if shares else 0.0),
+            "Price": price * fx, "Cur": cur,
             "Market Value": mv, "Book Value": book,
             "Gain/Loss $": mv - book,
             "Gain/Loss %": (mv - book) / book if book else 0.0,
