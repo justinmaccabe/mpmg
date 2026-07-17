@@ -836,6 +836,24 @@ def money_weighted_return(contribs: pd.DataFrame, market_value: float) -> dict:
             "since": min(f[0] for f in flows)}
 
 
+def book_value_at(tx, dates) -> pd.Series:
+    """CAD cost basis on each date — cumulative buys at trade-date FX. A true
+    step function that only moves on a purchase (sells not modeled; none exist).
+    Replaces the stored snapshot book_value, which was recorded daily under the
+    old today's-FX logic and so wobbled between trades."""
+    idx = pd.DatetimeIndex(pd.to_datetime(list(dates)))
+    if tx is None or tx.empty:
+        return pd.Series(0.0, index=idx)
+    buys = tx[tx["action"] == "Buy"].copy()
+    if buys.empty:
+        return pd.Series(0.0, index=idx)
+    fx = buys["fx_rate"].fillna(1.0) if "fx_rate" in buys.columns else 1.0
+    buys["cost_cad"] = (buys["shares"] * buys["price"] + buys["fees"]) * fx
+    bd = pd.to_datetime(buys["date"])
+    return pd.Series(
+        [float(buys.loc[bd <= d, "cost_cad"].sum()) for d in idx], index=idx)
+
+
 def calendar_returns(tx, instruments, period="5y") -> pd.DataFrame:
     """Monthly return grid (years × months + Year column), modeled: current
     holdings backtested in CAD, OPO excluded."""

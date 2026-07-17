@@ -22,7 +22,8 @@ import prices as pricelib
 # without a manual container reboot.
 if not hasattr(db, "get_cash"):
     importlib.reload(db)
-if not getattr(portfolio, "TOTALS_HAS_CASH", False):
+if not getattr(portfolio, "TOTALS_HAS_CASH", False) \
+        or not hasattr(portfolio, "book_value_at"):
     importlib.reload(portfolio)
 
 st.set_page_config(page_title="Maccabe Portfolio Management Group",
@@ -519,14 +520,27 @@ def render_overview():
         snaps = db.get_snapshots_df()
         if len(snaps):
             snaps = snaps.assign(date=pd.to_datetime(snaps["date"]))
-            freq = st.segmented_control(
-                "Frequency", ["Daily", "Weekly", "Monthly"], default="Daily",
-                label_visibility="collapsed", key="perf_freq") or "Daily"
+            fc1, fc2 = st.columns([3, 2])
+            with fc1:
+                freq = st.segmented_control(
+                    "Frequency", ["Daily", "Weekly", "Monthly"], default="Daily",
+                    label_visibility="collapsed", key="perf_freq") or "Daily"
+            with fc2:
+                view = st.segmented_control(
+                    "View", ["Value", "Growth"], default="Value",
+                    label_visibility="collapsed", key="perf_view") or "Value"
             rule = {"Weekly": "W", "Monthly": "ME"}.get(freq)
             s = snaps.set_index("date")
             if rule:
                 s = s.resample(rule).last().dropna(how="all")
             s = s.reset_index()
+            # clean book-value line from the ledger (stored snapshot book wobbled)
+            s["book_ledger"] = portfolio.book_value_at(
+                db.get_transactions_df(), s["date"]).values
+            # growth index: contributions normalized out (chain-linked daily P&L %)
+            twr_full = portfolio.twr_series(snaps)
+            twr_r = twr_full.resample(rule).last() if rule else twr_full
+            s["growth"] = s["date"].map(twr_r)
             # evenly-spaced category labels — one slot per snapshot, so weekends
             # never create gaps and every point (incl. today) is labelled
             if rule is None:                                   # daily
@@ -538,34 +552,47 @@ def render_overview():
             else:                                              # monthly → month name
                 s["_lbl"] = s["date"].dt.strftime("%B")
             fig = go.Figure()
-            if rule is None and "market_value_open" in s.columns \
-                    and s["market_value_open"].notna().any():
-                fig.add_trace(go.Scatter(x=s["_lbl"], y=s["market_value_open"],
-                              mode="markers", name="Open",
-                              marker=dict(size=9, color="#8FB3D9", symbol="circle-open")))
-            fig.add_trace(go.Scatter(x=s["_lbl"], y=s["market_value"],
-                          mode="lines+markers", name="Close", connectgaps=True,
-                          line=dict(color=BLUE, width=2), marker=dict(size=8)))
-            if s["book_value"].notna().any():
-                fig.add_trace(go.Scatter(x=s["_lbl"], y=s["book_value"],
-                              mode="lines+markers", name="Book Value", connectgaps=True,
-                              line=dict(color=GOLD, width=1.5, dash="dot"),
-                              marker=dict(size=7)))
-            fig = style_fig(fig, 340)
-            fig.update_yaxes(title="CAD", tickformat="$,.0f")
-            fig.update_xaxes(type="category", categoryorder="array",
-                             categoryarray=s["_lbl"].tolist())
-            ycols = [s["market_value"], s["book_value"]]
-            if "market_value_open" in s.columns:
-                ycols.append(s["market_value_open"])
-            yvals = pd.concat(ycols).dropna()
-            if len(yvals):
-                lo, hi = float(yvals.min()), float(yvals.max())
-                pad = (hi - lo) * 0.25 if hi > lo else max(hi * 0.02, 1.0)
-                fig.update_yaxes(range=[lo - pad, hi + pad])
-            if HIDE:
-                fig.update_yaxes(showticklabels=False, title=None)
-                fig.update_traces(hoverinfo="skip", hovertemplate=None)
+            if view == "Growth":
+                fig.add_trace(go.Scatter(
+                    x=s["_lbl"], y=s["growth"], mode="lines+markers", name="Growth",
+                    connectgaps=True, line=dict(color=GOLD, width=2),
+                    marker=dict(size=7),
+                    hovertemplate="%{x}: $%{y:.2f}<extra>Growth of $100</extra>"))
+                fig.add_hline(y=100, line=dict(color="#6B7078", width=1, dash="dot"))
+                fig = style_fig(fig, 340, legend=False)
+                fig.update_yaxes(title="Growth of $100 invested", tickformat="$,.0f")
+                fig.update_xaxes(type="category", categoryorder="array",
+                                 categoryarray=s["_lbl"].tolist())
+            else:
+                if rule is None and "market_value_open" in s.columns \
+                        and s["market_value_open"].notna().any():
+                    fig.add_trace(go.Scatter(x=s["_lbl"], y=s["market_value_open"],
+                                  mode="markers", name="Open",
+                                  marker=dict(size=9, color="#8FB3D9",
+                                              symbol="circle-open")))
+                fig.add_trace(go.Scatter(x=s["_lbl"], y=s["market_value"],
+                              mode="lines+markers", name="Close", connectgaps=True,
+                              line=dict(color=BLUE, width=2), marker=dict(size=8)))
+                if s["book_ledger"].notna().any():
+                    fig.add_trace(go.Scatter(x=s["_lbl"], y=s["book_ledger"],
+                                  mode="lines+markers", name="Book Value",
+                                  connectgaps=True, line=dict(shape="hv", color=GOLD,
+                                  width=1.5, dash="dot"), marker=dict(size=7)))
+                fig = style_fig(fig, 340)
+                fig.update_yaxes(title="CAD", tickformat="$,.0f")
+                fig.update_xaxes(type="category", categoryorder="array",
+                                 categoryarray=s["_lbl"].tolist())
+                ycols = [s["market_value"], s["book_ledger"]]
+                if "market_value_open" in s.columns:
+                    ycols.append(s["market_value_open"])
+                yvals = pd.concat(ycols).dropna()
+                if len(yvals):
+                    lo, hi = float(yvals.min()), float(yvals.max())
+                    pad = (hi - lo) * 0.25 if hi > lo else max(hi * 0.02, 1.0)
+                    fig.update_yaxes(range=[lo - pad, hi + pad])
+                if HIDE:
+                    fig.update_yaxes(showticklabels=False, title=None)
+                    fig.update_traces(hoverinfo="skip", hovertemplate=None)
             show(fig)
             ss = snaps.sort_values("date")
             o1, o2 = st.columns(2)
@@ -578,8 +605,15 @@ def render_overview():
                                fmt_money0(r[field]))
                 else:
                     col.metric(lbl, "—")
-            st.caption("Open and close values are recorded each trading day; weekly and "
-                       "monthly views reflect period-end closes.")
+            if view == "Growth":
+                st.caption("Growth of $100 invested at the start of tracking — "
+                           "time-weighted, so contributions are normalized out and "
+                           "only investment performance shows. This is the same series "
+                           "as the TWR figure above.")
+            else:
+                st.caption("Open and close values are recorded each trading day; weekly "
+                           "and monthly views reflect period-end closes. Book Value is "
+                           "the ledger cost basis (steps only on a trade).")
 
             st.markdown("##### Period Returns")
             rfreq = st.segmented_control(
