@@ -438,7 +438,12 @@ def trigger_snapshot():
         with urllib.request.urlopen(req, timeout=15) as r:
             return (r.status == 204), f"HTTP {r.status}"
     except urllib.error.HTTPError as e:
-        return False, f"GitHub API {e.code}: {e.reason}"
+        detail = ""
+        try:
+            detail = json.loads(e.read().decode()).get("message", "")
+        except Exception:
+            pass
+        return False, f"GitHub API {e.code}: {e.reason}" + (f" — {detail}" if detail else "")
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
 
