@@ -412,6 +412,37 @@ def _secret(name, default=""):
     return str(v or os.environ.get(name, "") or default)
 
 
+def trigger_snapshot():
+    """Fire the GitHub Actions snapshot workflow (workflow_dispatch) to record a
+    fresh snapshot. Needs GH_TOKEN in secrets — a fine-grained PAT scoped to the
+    repo with Actions: read/write. Returns (ok, message)."""
+    import json
+    import urllib.request
+    import urllib.error
+    token = _secret("GH_TOKEN")
+    if not token:
+        return False, ("No GitHub token configured. Add a fine-grained PAT as "
+                       "GH_TOKEN in the app secrets (Actions: read and write).")
+    repo = _secret("GH_REPO", "justinmaccabe/mpmg")
+    workflow = _secret("GH_WORKFLOW", "daily.yml")
+    ref = _secret("GH_REF", "main")
+    url = (f"https://api.github.com/repos/{repo}/actions/workflows/"
+           f"{workflow}/dispatches")
+    req = urllib.request.Request(
+        url, data=json.dumps({"ref": ref}).encode(), method="POST",
+        headers={"Authorization": f"Bearer {token}",
+                 "Accept": "application/vnd.github+json",
+                 "X-GitHub-Api-Version": "2022-11-28",
+                 "User-Agent": "mpmg-app"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return (r.status == 204), f"HTTP {r.status}"
+    except urllib.error.HTTPError as e:
+        return False, f"GitHub API {e.code}: {e.reason}"
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
 def require_passcode():
     """Gate the dashboard. The main passcode (APP_PASSCODE) gives full access;
     the guest passcode opens the full app locked in hidden-balances mode."""
@@ -1368,6 +1399,19 @@ def render_leverage():
 def render_trade():
     inst = db.get_instruments_df()
     if not GUEST:
+        rc1, rc2 = st.columns([1, 3])
+        if rc1.button("↻ Fetch fresh prices", use_container_width=True):
+            ok, msg = trigger_snapshot()
+            st.cache_data.clear()          # refresh the app's live quotes now
+            if ok:
+                st.success("Snapshot job triggered on GitHub — the recorded values "
+                           "land in the database in ~1 minute. Live prices refreshed.")
+            else:
+                st.warning(f"Live prices refreshed, but the GitHub job wasn't "
+                           f"triggered — {msg}")
+        rc2.caption("Refreshes the app's live quotes immediately and fires the "
+                    "GitHub Actions snapshot job to record an open/close data point.")
+
         if st.button("➕ Record OPO monthly buy"):
             today = dt.date.today()
             ym = (opo_pending_month(db.get_contributions_df(), today)
