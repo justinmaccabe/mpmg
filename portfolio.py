@@ -16,6 +16,8 @@ from db import BASE_CURRENCY, BENCHMARK_SYMBOL
 # Bumped when build_portfolio's totals gain a field the app depends on; the app's
 # reload guard keys on this so a warm container picks up the new module.
 TOTALS_HAS_CASH = True
+# Set when efficient_frontier accepts the `expret` param (AQR vs historical returns).
+FRONTIER_HAS_EXPRET = True
 
 
 def max_drawdown(series) -> float:
@@ -1044,13 +1046,18 @@ def block_correlation(period="5y") -> pd.DataFrame:
     return m.corr()
 
 
-def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dict:
+def efficient_frontier(period="5y", n_samples=6000, current_weights=None,
+                       expret="aqr") -> dict:
     """Long-only efficient frontier over the full opportunity set.
 
-    Expected returns are the AQR-based views (real, excess of cash) used by the
-    BL target; covariance is historical monthly, annualized. The frontier is
-    traced from closed-form minimum-variance solutions per target return
-    (clipped long-only) sharpened with a Dirichlet sample cloud.
+    Covariance is historical monthly, annualized (own-history vols + common-window
+    correlations, shrunk). Expected returns depend on `expret`:
+      - "aqr" (default): the AQR-based views (real, excess of cash) used by the BL
+        target — forward-looking.
+      - "historical": each asset's own-history annualized mean (nominal total
+        return) — backward-looking, in-sample.
+    The frontier is traced from closed-form minimum-variance solutions per target
+    return (clipped long-only), sharpened with a Dirichlet sample cloud.
     """
     labels = [u[0] for u in BL_UNIVERSE]
     proxies = {u[0]: u[1] for u in BL_UNIVERSE}
@@ -1075,9 +1082,12 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
     corr = np.corrcoef(common, rowvar=False)
     corr = 0.75 * corr + 0.25 * np.eye(n)
     cov = np.outer(vol_own, vol_own) * corr
-    ff = _get_ff_factors()
-    er = _bl_expected_returns(assets, ff, period)
-    mu = np.array([er.get(l, 0.0) for l in assets])
+    if expret == "historical":
+        mu = np.nanmean(arr, axis=0) * 12.0          # own-history annualized mean
+    else:
+        ff = _get_ff_factors()
+        er = _bl_expected_returns(assets, ff, period)
+        mu = np.array([er.get(l, 0.0) for l in assets])
 
     cands = [np.eye(n)[i] for i in range(n)]                    # single assets
     inv = np.linalg.pinv(cov)
@@ -1147,10 +1157,13 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
         if sym in whist.columns:
             wm = whist[sym].resample("ME").last().pct_change(fill_method=None).dropna()
             if len(wm) >= 12:
+                if expret == "historical":
+                    ret = float(wm.mean() * 12.0)
+                else:
+                    ret = sum(AQR_REGION_ER.get(r, 0.03) * w for r, w in mix.items())
                 wrows.append({"label": lbl,
                               "vol": float(np.nanstd(wm, ddof=1) * np.sqrt(12.0)),
-                              "ret": sum(AQR_REGION_ER.get(r, 0.03) * w
-                                         for r, w in mix.items())})
+                              "ret": ret})
 
     return {"assets": assets, "frontier": f, "wrapper_pts": pd.DataFrame(wrows),
             "asset_pts": pd.DataFrame({"label": assets, "vol": np.sqrt(np.diag(cov)),
@@ -1158,7 +1171,7 @@ def efficient_frontier(period="5y", n_samples=6000, current_weights=None) -> dic
             "tangency": tang,
             "prior_pt": point(BL_PRIOR),
             "current_pt": point(current_weights) if current_weights else None,
-            "months": int(len(common))}
+            "months": int(len(common)), "expret": expret}
 
 
 def tfsa_cumulative_room(year: int) -> float:

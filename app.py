@@ -23,7 +23,8 @@ import prices as pricelib
 if not hasattr(db, "get_cash"):
     importlib.reload(db)
 if not getattr(portfolio, "TOTALS_HAS_CASH", False) \
-        or not hasattr(portfolio, "book_value_at"):
+        or not hasattr(portfolio, "book_value_at") \
+        or not getattr(portfolio, "FRONTIER_HAS_EXPRET", False):
     importlib.reload(portfolio)
 
 st.set_page_config(page_title="Maccabe Portfolio Management Group",
@@ -158,11 +159,11 @@ def load_bl(period, confidence):
 
 
 @st.cache_data(ttl=86400)
-def load_frontier(period, sig):
-    # v3: wrapper reference points (cache-bust marker)
+def load_frontier(period, sig, expret="aqr"):
+    # v4: expected-returns basis (AQR vs historical)
     pos, _ = load_portfolio()
     cur = portfolio.current_block_weights(pos, db.get_instruments_df())
-    return portfolio.efficient_frontier(period, current_weights=cur)
+    return portfolio.efficient_frontier(period, current_weights=cur, expret=expret)
 
 
 @st.cache_data(ttl=86400)
@@ -1227,8 +1228,12 @@ def render_lookthrough():
     # ---- Efficient frontier ---------------------------------------------
     st.divider()
     st.subheader("Efficient Frontier")
+    ef_basis = st.segmented_control(
+        "Expected returns", ["AQR views", "Historical"], default="AQR views",
+        label_visibility="collapsed", key="ef_basis") or "AQR views"
+    expret = "historical" if ef_basis == "Historical" else "aqr"
     try:
-        ef = load_frontier("5y", holdings_sig())
+        ef = load_frontier("5y", holdings_sig(), expret)
     except Exception:
         ef = None
     if ef and len(ef.get("frontier", [])):
@@ -1268,16 +1273,29 @@ def render_lookthrough():
                                   "<extra></extra>"))
         fig = style_fig(fig, 460)
         fig.update_xaxes(title="Volatility (annualized)", tickformat=".0%")
-        fig.update_yaxes(title="Expected real return, excess of cash", tickformat=".1%")
+        ylab = ("Historical mean return (annualized)" if expret == "historical"
+                else "Expected real return, excess of cash")
+        fig.update_yaxes(title=ylab, tickformat=".1%")
         show(fig)
-        st.caption(
-            f"Long-only frontier over the full opportunity set. Expected returns are the "
-            "AQR-based views (medium-term real, excess of cash) used by the Black-Litterman "
-            f"target; covariance from {ef['months']} months of history, annualized, with "
-            "shrinkage. The current portfolio plots below the frontier to the extent its US "
-            "concentration is uncompensated under AQR's assumptions; the tangency portfolio "
-            "maximizes expected Sharpe. Expected returns are assumptions, not forecasts — "
-            "the frontier moves with them.")
+        if expret == "historical":
+            st.caption(
+                f"Long-only frontier over the full opportunity set. Expected returns are "
+                f"each sleeve's own historical mean (nominal total return, dividends "
+                f"included), annualized over {ef['months']} months; covariance from the "
+                "same history with shrinkage. This is the *past's* efficient frontier — "
+                "small-sample and in-sample, so the tangency is what would have been "
+                "optimal looking backward, not a forecast. Compare it with the AQR view: "
+                "historical means overweight whatever recently won (US), which is exactly "
+                "why the forward-looking frontier leans elsewhere.")
+        else:
+            st.caption(
+                f"Long-only frontier over the full opportunity set. Expected returns are the "
+                "AQR-based views (medium-term real, excess of cash) used by the Black-Litterman "
+                f"target; covariance from {ef['months']} months of history, annualized, with "
+                "shrinkage. The current portfolio plots below the frontier to the extent its US "
+                "concentration is uncompensated under AQR's assumptions; the tangency portfolio "
+                "maximizes expected Sharpe. Expected returns are assumptions, not forecasts — "
+                "the frontier moves with them.")
     else:
         st.caption("Frontier data is currently unavailable.")
 
