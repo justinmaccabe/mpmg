@@ -477,6 +477,15 @@ def require_passcode():
                 st.rerun()
             else:
                 st.error("Incorrect passcode.")
+        if st.button("Explore as guest", use_container_width=True):
+            st.session_state["authed"], st.session_state["guest"] = True, True
+            st.rerun()
+        st.markdown(
+            f"<div style='text-align:center; color:#8A8F9A; font-family:{SERIF};"
+            " font-size:.82rem; margin-top:.5rem; line-height:1.4;'>"
+            "Reviewing this from a résumé? <br><em>Explore as guest</em> for a "
+            "read-only tour — full analytics, balances masked for privacy.</div>",
+            unsafe_allow_html=True)
     st.stop()
 
 
