@@ -464,28 +464,33 @@ def require_passcode():
         f"<div style='color:{GOLD}; letter-spacing:.4em; text-transform:uppercase;"
         " font-size:.7rem; margin-top:.5rem;'>Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>"
         "</div>", unsafe_allow_html=True)
+    st.markdown("<style>input[type=\"password\"]{text-align:center;}</style>",
+                unsafe_allow_html=True)
     c = st.columns([1, 1, 1])
     with c[1]:
-        entered = st.text_input("Passcode", type="password",
-                                label_visibility="collapsed", placeholder="Enter passcode")
-        if entered:
+        with st.form("login", clear_on_submit=False, border=False):
+            entered = st.text_input(
+                "Passcode", type="password", label_visibility="collapsed",
+                placeholder="Enter passcode")
+            go = st.form_submit_button("Sign in", use_container_width=True,
+                                       type="primary")
+        if go:
             if entered == code:
                 st.session_state["authed"], st.session_state["guest"] = True, False
                 st.rerun()
             elif entered == guest_code:
                 st.session_state["authed"], st.session_state["guest"] = True, True
                 st.rerun()
-            else:
+            elif entered:
                 st.error("Incorrect passcode.")
         if st.button("Explore as guest", use_container_width=True):
             st.session_state["authed"], st.session_state["guest"] = True, True
             st.rerun()
         st.markdown(
             f"<div style='text-align:center; color:#8A8F9A; font-family:{SERIF};"
-            " font-size:.82rem; margin-top:.5rem; line-height:1.4;'>"
-            "Reviewing this from a résumé? <br><em>Explore as guest</em> for a "
-            "read-only tour — full analytics, balances masked for privacy.</div>",
-            unsafe_allow_html=True)
+            " font-size:.8rem; margin-top:.6rem; line-height:1.4;'>"
+            "Reviewing this? <em>Explore as guest</em> — read-only, balances "
+            "masked.</div>", unsafe_allow_html=True)
     st.stop()
 
 
