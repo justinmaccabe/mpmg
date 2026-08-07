@@ -449,6 +449,13 @@ def trigger_snapshot():
         return False, f"{type(e).__name__}: {e}"
 
 
+def _passcode_entered():
+    """Marks the passcode as submitted. Fires on Enter (and on a blur that
+    changed the value) but never on the reveal-eye click, which changes no
+    value — so peeking at what you typed cannot trigger a failed sign-in."""
+    st.session_state["passcode_submitted"] = True
+
+
 def require_passcode():
     """Gate the dashboard. The main passcode (APP_PASSCODE) gives full access;
     the guest passcode opens the full app locked in hidden-balances mode."""
@@ -464,17 +471,27 @@ def require_passcode():
         f"<div style='color:{GOLD}; letter-spacing:.4em; text-transform:uppercase;"
         " font-size:.7rem; margin-top:.5rem;'>Private Wealth &nbsp;·&nbsp; Quantitative Strategy</div>"
         "</div>", unsafe_allow_html=True)
-    st.markdown("<style>[data-testid=\"stTextInput\"] input,.stTextInput input"
-                "{text-align:center;}</style>", unsafe_allow_html=True)
+    # Centred passcode text, and no visible submit button — Enter signs in. The
+    # button still has to exist for the form to accept Enter at all, so it is
+    # hidden rather than removed. Scoped to this screen: require_passcode()
+    # returns before this runs once authenticated, so the app's other forms keep
+    # their buttons.
+    st.markdown(
+        "<style>"
+        "[data-testid=\"stTextInput\"] input,.stTextInput input{text-align:center;}"
+        # The "Press Enter to apply" hint renders on top of the reveal icon.
+        "[data-testid=\"InputInstructions\"]{display:none;}"
+        "</style>", unsafe_allow_html=True)
     c = st.columns([1, 1, 1])
     with c[1]:
-        with st.form("login", clear_on_submit=False, border=False):
-            entered = st.text_input(
-                "Passcode", type="password", label_visibility="collapsed",
-                placeholder="Enter passcode")
-            go = st.form_submit_button("Sign in", use_container_width=True,
-                                       type="primary")
-        if go:
+        # A bare input, not a form: Enter commits the value natively and the
+        # callback marks it submitted, so there is no button to hide and nothing
+        # that depends on a hidden element still being clickable.
+        entered = st.text_input(
+            "Passcode", type="password", label_visibility="collapsed",
+            placeholder="Enter passcode", key="passcode_input",
+            on_change=_passcode_entered)
+        if st.session_state.pop("passcode_submitted", False):
             if entered == code:
                 st.session_state["authed"], st.session_state["guest"] = True, False
                 st.rerun()
