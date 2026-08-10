@@ -778,7 +778,12 @@ def twr_series(snapshots: pd.DataFrame) -> pd.Series:
     """True time-weighted return index from recorded daily P&L percentages.
 
     daily_pnl_pct is price-move-only (shares × price change), so contributions
-    never register as return. Chain-linked, rebased to 100 at tracking start.
+    never register as return. Chain-linked to a growth-of-100 index.
+
+    The series opens with an explicit 100 on the day before the first recorded
+    return — the moment the money was notionally invested. Without that point the
+    first value is already 100x(1+r1), so a "growth of $100" chart never actually
+    starts at 100 and any resampled view (weekly, monthly) opens mid-move.
     """
     if snapshots is None or snapshots.empty or "daily_pnl_pct" not in snapshots:
         return pd.Series(dtype=float)
@@ -787,7 +792,9 @@ def twr_series(snapshots: pd.DataFrame) -> pd.Series:
         return pd.Series(dtype=float)
     s["date"] = pd.to_datetime(s["date"])
     s = s.sort_values("date").set_index("date")
-    return (1 + s["daily_pnl_pct"].astype(float)).cumprod() * 100
+    index = (1 + s["daily_pnl_pct"].astype(float)).cumprod() * 100
+    inception = index.index[0] - pd.Timedelta(days=1)
+    return pd.concat([pd.Series([100.0], index=[inception]), index])
 
 
 def xirr(flows) -> float:

@@ -229,6 +229,22 @@ def fmt_signed(v):
     return MASK if HIDE else f"{'+' if v >= 0 else '−'}${abs(v):,.0f}"
 
 
+def period_labels(dates, rule):
+    """Category labels for a date series at daily / weekly / monthly frequency.
+
+    Shared by the value and growth charts so their axes read identically; they
+    are plotted from different series, and duplicating this drifted once already.
+    """
+    dates = pd.to_datetime(pd.Series(dates).reset_index(drop=True))
+    if rule is None:                                       # daily
+        return dates.dt.strftime("%b %d")
+    if rule == "W":                                        # weekly → that Monday
+        monday = dates - pd.to_timedelta(dates.dt.weekday, unit="D")
+        return ("<span style='font-size:0.72em'>Week of</span><br>"
+                + monday.dt.strftime("%b %d, %Y"))
+    return dates.dt.strftime("%B")                          # monthly → month name
+
+
 def logo_html(box, m, w):
     """The M·WEALTH mark: gold-gradient serif M over white WEALTH in a gold square.
     Font is inherited from the global serif rule (avoids quoting issues)."""
@@ -608,30 +624,41 @@ def render_overview():
                 db.get_transactions_df(), s["date"]).values
             # growth index: contributions normalized out (chain-linked daily P&L %)
             twr_full = portfolio.twr_series(snaps)
-            twr_r = twr_full.resample(rule).last() if rule else twr_full
+            # Resample the return history only, then put the opening 100 back in
+            # front of it. Resampling the whole series would fold that opening
+            # point into the first period bucket and .last() would overwrite it —
+            # which is why the monthly view in particular never began at 100.
+            twr_r = (
+                pd.concat([twr_full.iloc[[0]], twr_full.iloc[1:].resample(rule).last()])
+                if rule else twr_full
+            )
             s["growth"] = s["date"].map(twr_r)
             # evenly-spaced category labels — one slot per snapshot, so weekends
             # never create gaps and every point (incl. today) is labelled
-            if rule is None:                                   # daily
-                s["_lbl"] = s["date"].dt.strftime("%b %d")
-            elif rule == "W":                                  # weekly → Monday
-                monday = s["date"] - pd.to_timedelta(s["date"].dt.weekday, unit="D")
-                s["_lbl"] = ("<span style='font-size:0.72em'>Week of</span><br>"
-                             + monday.dt.strftime("%b %d, %Y"))
-            else:                                              # monthly → month name
-                s["_lbl"] = s["date"].dt.strftime("%B")
+            s["_lbl"] = period_labels(s["date"], rule)
             fig = go.Figure()
             if view == "Growth":
+                # Plot the growth index on its own dates, not the value series'.
+                # It carries an extra opening point at 100 (the day the money was
+                # notionally invested), and mapping it onto snapshot dates would
+                # drop exactly that point — which is why the chart used to start
+                # partway through the first period instead of at 100.
+                g = twr_r.dropna().rename("growth").reset_index(names="date")
+                g["_lbl"] = period_labels(g["date"], rule)
+                g.loc[g.index[0], "_lbl"] = (
+                    "<span style='font-size:0.72em'>Invested</span><br>"
+                    + g["date"].iloc[0].strftime("%b %d, %Y")
+                )
                 fig.add_trace(go.Scatter(
-                    x=s["_lbl"], y=s["growth"], mode="lines+markers", name="Growth",
+                    x=g["_lbl"], y=g["growth"], mode="lines+markers", name="Growth",
                     connectgaps=True, line=dict(color=GOLD, width=2),
                     marker=dict(size=7),
                     hovertemplate="%{x}: $%{y:.2f}<extra>Growth of $100</extra>"))
                 fig.add_hline(y=100, line=dict(color="#6B7078", width=1, dash="dot"))
                 fig = style_fig(fig, 340, legend=False)
-                fig.update_yaxes(title="Growth of $100 invested", tickformat="$,.0f")
+                fig.update_yaxes(title="Growth of $100 invested", tickformat="$,.2f")
                 fig.update_xaxes(type="category", categoryorder="array",
-                                 categoryarray=s["_lbl"].tolist())
+                                 categoryarray=g["_lbl"].tolist())
             else:
                 if rule is None and "market_value_open" in s.columns \
                         and s["market_value_open"].notna().any():
