@@ -24,7 +24,8 @@ if not hasattr(db, "get_cash"):
     importlib.reload(db)
 if not getattr(portfolio, "TOTALS_HAS_CASH", False) \
         or not hasattr(portfolio, "book_value_at") \
-        or not getattr(portfolio, "FRONTIER_HAS_EXPRET", False):
+        or not getattr(portfolio, "FRONTIER_HAS_EXPRET", False) \
+        or getattr(portfolio, "LOOKTHROUGH_VERSION", 0) < 2:
     importlib.reload(portfolio)
 
 st.set_page_config(page_title="Maccabe Portfolio Management Group",
@@ -1365,7 +1366,11 @@ def render_lookthrough():
 
 
 @st.cache_data(ttl=900)
-def load_xray(sig):
+def load_xray(sig, ver):
+    # `ver` is portfolio.LOOKTHROUGH_VERSION and exists only to enter the cache
+    # key: Streamlit hashes this function's source, which does not change when
+    # security_lookthrough's return shape does, so a warm container would
+    # otherwise keep serving a dict that is missing newly-added keys.
     pos, _ = load_portfolio()
     return portfolio.security_lookthrough(pos, db.get_instruments_df())
 
@@ -1379,9 +1384,9 @@ def fund_colors(funds):
     return {f: PALETTE[i % len(PALETTE)] for i, f in enumerate(ranked)}
 
 
-def fund_cards(x, pos):
+def fund_cards(x, pos, colors):
     """One card per holding: what it is, what it's worth, what's inside it."""
-    facts, colors = x["facts"], fund_colors(list(x["facts"]))
+    facts = x["facts"]
     mix = x["opo_mix"]
     blurb = {
         "XEQT": lambda f: (f"Five holdings on paper; {f.get('securities', 0):,} "
@@ -1435,7 +1440,7 @@ def fund_cards(x, pos):
 def render_xray():
     st.subheader("Holdings X-Ray")
     pos, _ = load_portfolio()
-    x = load_xray(holdings_sig())
+    x = load_xray(holdings_sig(), portfolio.LOOKTHROUGH_VERSION)
     if not x:
         st.info("No look-through data available. Refresh the composition snapshot "
                 "in `data/lookthrough/` to enable this view.")
@@ -1459,7 +1464,10 @@ def render_xray():
         f"**{overlap / total:.0%} of the money** sits in names carried by three or "
         f"more of your funds at once, and the ten largest are **{s['top10'] / total:.0%}**.")
 
-    fund_cards(x, pos)
+    # one colour map for the whole tab, so cards and chart can never disagree
+    colors = fund_colors(sorted(set(funds) | set(x.get("facts") or {})))
+    if x.get("facts"):          # cards are additive; never break the tab for them
+        fund_cards(x, pos, colors)
 
     m1, m2, m3, m4 = st.columns(4)
     top = comp.iloc[0]
@@ -1477,7 +1485,6 @@ def render_xray():
     n = st.slider("Companies shown", 5, 30, 15, step=5, key="xray_n",
                   label_visibility="collapsed")
     head = comp.head(n).iloc[::-1]
-    colors = fund_colors(list(x["facts"]))
     fig = go.Figure()
     for f in funds:
         fig.add_bar(

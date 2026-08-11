@@ -210,6 +210,27 @@ class TestSecurityLookthrough(unittest.TestCase):
         empty = pd.DataFrame(columns=["Ticker", "Market Value"])
         self.assertEqual(portfolio.security_lookthrough(empty, _instruments()), {})
 
+    def test_return_shape_is_pinned_to_the_version_constant(self):
+        # Streamlit Cloud can keep a warm process with a stale portfolio module
+        # and a cached result from it. app.py guards on LOOKTHROUGH_VERSION and
+        # feeds it into load_xray's cache key, so adding a key here without
+        # bumping the constant ships a KeyError to the deployed app.
+        expected = {"companies", "total", "as_of", "region", "sector", "asset",
+                    "sector_base", "stats", "unmapped", "facts", "opo_mix",
+                    "avge_note"}
+        self.assertEqual(set(self.x), expected,
+                         "security_lookthrough's keys changed — bump "
+                         "portfolio.LOOKTHROUGH_VERSION and the app.py guard")
+        self.assertGreaterEqual(portfolio.LOOKTHROUGH_VERSION, 2)
+
+    def test_every_holding_gets_facts(self):
+        for tkr, f in self.x["facts"].items():
+            self.assertIn("name", f)
+            self.assertIn("value", f)
+            self.assertIn("weight", f)
+        self.assertAlmostEqual(sum(f["weight"] for f in self.x["facts"].values()),
+                               1.0, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()

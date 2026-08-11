@@ -21,6 +21,11 @@ from db import BASE_CURRENCY, BENCHMARK_SYMBOL
 TOTALS_HAS_CASH = True
 # Set when efficient_frontier accepts the `expret` param (AQR vs historical returns).
 FRONTIER_HAS_EXPRET = True
+# Bump whenever security_lookthrough's return shape changes. The app checks this
+# in its reload guard AND passes it into the cache key for load_xray — Streamlit
+# keys st.cache_data on the decorated function's own source, not on the module
+# function it calls, so a shape change here is invisible to the cache otherwise.
+LOOKTHROUGH_VERSION = 2
 
 
 def max_drawdown(series) -> float:
