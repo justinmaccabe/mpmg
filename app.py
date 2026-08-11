@@ -643,7 +643,12 @@ def render_overview():
                 # notionally invested), and mapping it onto snapshot dates would
                 # drop exactly that point — which is why the chart used to start
                 # partway through the first period instead of at 100.
-                g = twr_r.dropna().rename("growth").reset_index(names="date")
+                # Built column-wise rather than via reset_index(names=...): that
+                # keyword does not exist on every pandas the deploy might install,
+                # and it raised a TypeError in production while working locally.
+                _gs = twr_r.dropna()
+                g = pd.DataFrame({"date": pd.to_datetime(_gs.index),
+                                  "growth": _gs.to_numpy()})
                 g["_lbl"] = period_labels(g["date"], rule)
                 g.loc[g.index[0], "_lbl"] = (
                     "<span style='font-size:0.72em'>Invested</span><br>"
