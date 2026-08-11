@@ -636,7 +636,7 @@ def security_lookthrough(positions: pd.DataFrame, instruments: pd.DataFrame) -> 
 
     detail = set(meta["funds_with_security_detail"])
     companies, region, sector, asset = {}, {}, {}, {}
-    unmapped, sector_base = {}, 0.0
+    unmapped, sector_base, facts = {}, 0.0, {}
 
     def _add(store, key, amount):
         store[key] = store.get(key, 0.0) + amount
@@ -645,10 +645,17 @@ def security_lookthrough(positions: pd.DataFrame, instruments: pd.DataFrame) -> 
         row = companies.setdefault(tkr, {"name": name, "funds": {}})
         row["funds"][fund] = row["funds"].get(fund, 0.0) + amount
 
+    names = meta.get("fund_names", {})
     for fund, fund_mv in mv.items():
+        facts[fund] = {"name": names.get(fund, fund), "value": fund_mv,
+                       "weight": fund_mv / total}
         if fund in detail:
             sub = df[df["fund"] == fund]
             covered = float(sub["weight"].sum())
+            eqs = sub[sub["asset_class"] == "Equity"]
+            facts[fund].update(
+                securities=int(len(sub)),
+                countries=int(eqs.loc[eqs["country"] != "", "country"].nunique()))
             for r in sub.itertuples(index=False):
                 amt = fund_mv * r.weight
                 if r.asset_class == "Equity":
@@ -679,6 +686,7 @@ def security_lookthrough(positions: pd.DataFrame, instruments: pd.DataFrame) -> 
         elif fund == "AVGE":
             av = meta["avge"]
             denom = sum(av["sleeves"].values())
+            facts[fund]["sleeves"] = sum(1 for s in av["sleeves"] if s != "CASH")
             for sleeve, w in av["sleeves"].items():
                 amt = fund_mv * w / denom
                 if sleeve == "AVRE":
@@ -722,6 +730,7 @@ def security_lookthrough(positions: pd.DataFrame, instruments: pd.DataFrame) -> 
         "sector": {k: v / sector_base for k, v in sector.items()} if sector_base else {},
         "asset": {k: v / total for k, v in asset.items()},
         "sector_base": sector_base, "stats": stats, "unmapped": unmapped,
+        "facts": facts, "opo_mix": meta["opo"]["mix"],
         "avge_note": meta["avge"]["note"],
     }
 

@@ -6,6 +6,13 @@
     "XUS",
     "XEQT"
   ],
+  "fund_names": {
+    "XEQT": "iShares Core Equity ETF Portfolio",
+    "XUS": "iShares Core S&P 500 Index ETF",
+    "OPO": "Optimize All Growth Fund",
+    "AVGE": "Avantis All Equity Markets ETF",
+    "ZMMK": "BMO Money Market Fund ETF"
+  },
   "opo": {
     "name": "Optimize All Growth Fund",
     "mix": {

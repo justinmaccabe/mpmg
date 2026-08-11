@@ -1370,8 +1370,71 @@ def load_xray(sig):
     return portfolio.security_lookthrough(pos, db.get_instruments_df())
 
 
+# One colour per fund, fixed by fund name rather than by rank, so the cards and
+# the stacked chart below them always agree and a position change never repaints
+# a survivor. Falls back through PALETTE for anything new.
+def fund_colors(funds):
+    order = ["XEQT", "OPO", "XUS", "AVGE", "ZMMK"]
+    ranked = sorted(funds, key=lambda f: (order.index(f) if f in order else 99, f))
+    return {f: PALETTE[i % len(PALETTE)] for i, f in enumerate(ranked)}
+
+
+def fund_cards(x, pos):
+    """One card per holding: what it is, what it's worth, what's inside it."""
+    facts, colors = x["facts"], fund_colors(list(x["facts"]))
+    mix = x["opo_mix"]
+    blurb = {
+        "XEQT": lambda f: (f"Five holdings on paper; {f.get('securities', 0):,} "
+                           f"securities underneath, across {f.get('countries', 0)} "
+                           "countries."),
+        "XUS": lambda f: (f"{f.get('securities', 0):,} US large caps, unhedged to "
+                          "the Canadian dollar."),
+        "OPO": lambda f: (f"{mix['Equities']:.1%} public equity, "
+                          f"{mix['Privates']:.1%} private markets, "
+                          f"{mix['Bonds']:.1%} bonds. Concentrated, active, and "
+                          "Canadian-managed."),
+        "AVGE": lambda f: (f"A fund of {f.get('sleeves', 0)} Avantis funds with "
+                           "value and small-cap tilts. US-listed, so USD."),
+    }
+    meta = pos.set_index("Ticker") if not pos.empty else None
+
+    # One grid rather than st.columns: columns don't stretch their children, so
+    # the longest blurb leaves the other cards short. Grid rows equalise.
+    cells = ""
+    for tkr, f in sorted(facts.items(), key=lambda kv: -kv[1]["value"]):
+        c = colors[tkr]
+        foot = ""
+        if meta is not None and tkr in meta.index:
+            r = meta.loc[tkr]
+            unit = "shares" if r["Cur"] == "USD" else "units"
+            foot = f"{r['Account']} &middot; {r['Shares']:,.2f} {unit}"
+        desc = blurb.get(tkr, lambda _: "No composition on file.")(f)
+        cells += (
+            f"<div style='display:flex; flex-direction:column;"
+            f" background:rgba(255,255,255,.022);"
+            f" border:1px solid rgba(201,162,39,.18); border-top:3px solid {c};"
+            f" border-radius:11px; padding:.9rem 1.1rem 1rem;'>"
+            f"<div class='mpmg-num' style='color:{c}; font-weight:700;"
+            f" letter-spacing:.06em; font-size:.95rem;'>{tkr}</div>"
+            f"<div class='mpmg-num' style='font-size:1.5rem; color:#F4F4F4;"
+            f" margin-top:.15rem;'>{fmt_money0(f['value'])}</div>"
+            f"<div class='mpmg-num' style='color:#9AA0AB; font-size:.72rem;"
+            f" margin-top:.1rem;'>{f['weight']:.2%} of portfolio</div>"
+            f"<div style='color:#C8CCD2; font-size:.86rem; line-height:1.45;"
+            f" margin-top:.55rem;'>{f['name']}. {desc}</div>"
+            + (f"<div style='color:#79808B; text-transform:uppercase;"
+               f" letter-spacing:.1em; font-size:.58rem; margin-top:auto;"
+               f" padding-top:.7rem;'>{foot}</div>" if foot else "")
+            + "</div>")
+    st.markdown(
+        f"<div style='display:grid; gap:.7rem; margin:.2rem 0 1rem;"
+        f" grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));'>"
+        f"{cells}</div>", unsafe_allow_html=True)
+
+
 def render_xray():
     st.subheader("Holdings X-Ray")
+    pos, _ = load_portfolio()
     x = load_xray(holdings_sig())
     if not x:
         st.info("No look-through data available. Refresh the composition snapshot "
@@ -1396,6 +1459,8 @@ def render_xray():
         f"**{overlap / total:.0%} of the money** sits in names carried by three or "
         f"more of your funds at once, and the ten largest are **{s['top10'] / total:.0%}**.")
 
+    fund_cards(x, pos)
+
     m1, m2, m3, m4 = st.columns(4)
     top = comp.iloc[0]
     m1.metric(f"Largest single company ({top['Ticker']})", f"{top['Weight']:.2%}",
@@ -1412,11 +1477,12 @@ def render_xray():
     n = st.slider("Companies shown", 5, 30, 15, step=5, key="xray_n",
                   label_visibility="collapsed")
     head = comp.head(n).iloc[::-1]
+    colors = fund_colors(list(x["facts"]))
     fig = go.Figure()
-    for i, f in enumerate(funds):
+    for f in funds:
         fig.add_bar(
             y=head["Ticker"], x=head[f], name=f, orientation="h",
-            marker_color=PALETTE[i % len(PALETTE)],
+            marker_color=colors[f],
             hovertemplate=("%{y} · " + f + ": %{customdata}<extra></extra>"),
             customdata=[fmt_money0(v) for v in head[f]])
     fig = style_fig(fig, max(320, 26 * n), legend=True)
