@@ -5,6 +5,9 @@ USD/CAD rate; cost basis is frozen at each trade's FX (stored per transaction), 
 book value is a step function and genuine FX gains surface in Gain/Loss.
 """
 import datetime as dt
+import functools
+import json
+import pathlib
 
 import numpy as np
 import pandas as pd
@@ -563,6 +566,164 @@ def look_through(positions: pd.DataFrame, instruments: pd.DataFrame) -> dict:
         region[r] = region.get(r, 0.0) + w
         style[sty] = style.get(sty, 0.0) + w
     return {"blocks": blocks, "region": region, "style": style}
+
+
+# --- Security-level look-through -----------------------------------------
+# look_through() above stops at the building-block level and drops OPO. This
+# one goes all the way to individual companies and keeps OPO in, so a name held
+# by three funds at once shows up as one line with the three contributions
+# summed. Fund compositions come from data/lookthrough/ (a dated snapshot of the
+# published holdings files); the dollar weighting is always live.
+_LT_DIR = pathlib.Path(__file__).with_name("data") / "lookthrough"
+_DEV_MARKETS = {
+    "Japan", "United Kingdom", "Australia", "Germany", "France", "Switzerland",
+    "Netherlands", "Sweden", "Denmark", "Italy", "Spain", "Hong Kong", "Singapore",
+    "Finland", "Belgium", "Norway", "Israel", "Ireland", "New Zealand", "Austria",
+    "Portugal", "Britain", "Bermuda", "Luxembourg", "Jersey", "Macau", "Guernsey",
+    "Cayman Islands",
+}
+# tickers that mean the same company across the three holdings files
+_TICKER_ALIAS = {
+    "BRK/B": "BRK.B", "BRKB": "BRK.B", "GOOG": "GOOGL",
+    "AP-U": "AP.UN", "SRU-U": "SRU.UN", "REI-U": "REI.UN",
+    "CAR-U": "CAR.UN", "BIP-U": "BIP.UN",
+}
+_PRETTY = {"GOOGL": "Alphabet (GOOGL + GOOG)", "BRK.B": "Berkshire Hathaway B"}
+# the iShares files and the Optimize sheet spell this one differently
+_SECTOR_ALIAS = {"Communication": "Communication Services"}
+
+
+@functools.lru_cache(maxsize=1)
+def _lt_data():
+    """(holdings frame, meta dict) for the look-through snapshot, or (None, None)."""
+    try:
+        df = pd.read_csv(_LT_DIR / "holdings.csv.gz")
+        meta = json.loads((_LT_DIR / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, None
+    # blank cells must read as "" — NaN is truthy and would slip past the
+    # `if r.sector` / `if r.country` guards below into bogus buckets
+    for col in ("ticker", "name", "sector", "country"):
+        df[col] = df[col].fillna("").astype(str).str.strip()
+    df["ticker"] = df["ticker"].str.upper().replace(_TICKER_ALIAS)
+    df["sector"] = df["sector"].replace(_SECTOR_ALIAS)
+    return df, meta
+
+
+def _region_of(country: str) -> str:
+    if country == "United States":
+        return "United States"
+    if country == "Canada":
+        return "Canada"
+    return "Intl developed" if country in _DEV_MARKETS else "Emerging markets"
+
+
+def security_lookthrough(positions: pd.DataFrame, instruments: pd.DataFrame) -> dict:
+    """Resolve every fund to the individual securities inside it.
+
+    Returns company-level exposure (summed across funds), plus region, sector and
+    asset-class rollups and concentration stats. Funds with no composition data
+    are reported in `unmapped` rather than silently dropped.
+    """
+    df, meta = _lt_data()
+    if df is None or positions.empty:
+        return {}
+
+    mv = {str(r["Ticker"]): float(r["Market Value"]) for _, r in positions.iterrows()}
+    total = sum(mv.values())
+    if not total:
+        return {}
+
+    detail = set(meta["funds_with_security_detail"])
+    companies, region, sector, asset = {}, {}, {}, {}
+    unmapped, sector_base = {}, 0.0
+
+    def _add(store, key, amount):
+        store[key] = store.get(key, 0.0) + amount
+
+    def _company(tkr, name, fund, amount):
+        row = companies.setdefault(tkr, {"name": name, "funds": {}})
+        row["funds"][fund] = row["funds"].get(fund, 0.0) + amount
+
+    for fund, fund_mv in mv.items():
+        if fund in detail:
+            sub = df[df["fund"] == fund]
+            covered = float(sub["weight"].sum())
+            for r in sub.itertuples(index=False):
+                amt = fund_mv * r.weight
+                if r.asset_class == "Equity":
+                    if r.ticker:
+                        _company(r.ticker, r.name, fund, amt)
+                    if r.sector:
+                        _add(sector, r.sector, amt)
+                # OPO's equity rows carry no country (its aggregate split is
+                # applied below); its bonds are tagged by issuer domicile
+                if r.country:
+                    _add(region, _region_of(r.country), amt)
+                _add(asset, {"Equity": "Public equity", "Bond": "Bonds",
+                             "Private": "Private markets"}.get(r.asset_class, "Other"), amt)
+            # OPO publishes sector/country for its equity sleeve only in aggregate
+            if fund == "OPO":
+                eq = fund_mv * meta["opo"]["mix"]["Equities"]
+                for s, w in meta["opo"]["sector"].items():
+                    _add(sector, _SECTOR_ALIAS.get(s, s), eq * w)
+                for c, w in meta["opo"]["country"].items():
+                    _add(region, _region_of(c), eq * w)
+                _add(region, "Private markets", fund_mv * meta["opo"]["mix"]["Privates"])
+                sector_base += eq
+            else:
+                sector_base += fund_mv * covered
+            if covered < 0.999:                      # residual is fund-level cash
+                _add(asset, "Cash", fund_mv * (1 - covered))
+
+        elif fund == "AVGE":
+            av = meta["avge"]
+            denom = sum(av["sleeves"].values())
+            for sleeve, w in av["sleeves"].items():
+                amt = fund_mv * w / denom
+                if sleeve == "AVRE":
+                    for reg, share in av["avre_split"].items():
+                        _add(region, reg, amt * share)
+                elif sleeve != "CASH":              # cash is not a region
+                    _add(region, av["sleeve_region"].get(sleeve, "Other"), amt)
+                _add(asset, "Cash" if sleeve == "CASH" else "Public equity", amt)
+                for tkr, pct in av["sleeve_holdings"].get(sleeve, []):
+                    tkr = _TICKER_ALIAS.get(tkr, tkr)
+                    _company(tkr, tkr, "AVGE", amt * pct / 100.0)
+        else:
+            unmapped[fund] = fund_mv
+            _add(asset, "Cash", fund_mv)
+
+    rows = []
+    for tkr, row in companies.items():
+        rows.append({"Ticker": tkr, "Name": _PRETTY.get(tkr, row["name"]),
+                     **{f: row["funds"].get(f, 0.0) for f in mv},
+                     "Total": sum(row["funds"].values()),
+                     "Funds": len(row["funds"])})
+    comp = (pd.DataFrame(rows).sort_values("Total", ascending=False)
+            .reset_index(drop=True))
+    comp["Weight"] = comp["Total"] / total
+
+    tail = comp[comp["Total"] < 10]
+    by_count = {n: float(g["Total"].sum()) for n, g in comp.groupby("Funds")}
+    stats = {
+        "distinct": int(len(comp)),
+        "top5": float(comp["Total"].head(5).sum()),
+        "top10": float(comp["Total"].head(10).sum()),
+        "top25": float(comp["Total"].head(25).sum()),
+        "tail_count": int(len(tail)),
+        "tail_value": float(tail["Total"].sum()),
+        "by_fund_count": by_count,
+        "max_overlap": int(comp["Funds"].max()) if len(comp) else 0,
+    }
+    return {
+        "companies": comp, "total": total, "as_of": meta["as_of"],
+        "region": {k: v / total for k, v in region.items()},
+        "sector": {k: v / sector_base for k, v in sector.items()} if sector_base else {},
+        "asset": {k: v / total for k, v in asset.items()},
+        "sector_base": sector_base, "stats": stats, "unmapped": unmapped,
+        "avge_note": meta["avge"]["note"],
+    }
 
 
 def current_block_weights(positions, instruments) -> dict:

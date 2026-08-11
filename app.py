@@ -1364,6 +1364,129 @@ def render_lookthrough():
         st.caption("Frontier data is currently unavailable.")
 
 
+@st.cache_data(ttl=900)
+def load_xray(sig):
+    pos, _ = load_portfolio()
+    return portfolio.security_lookthrough(pos, db.get_instruments_df())
+
+
+def render_xray():
+    st.subheader("Holdings X-Ray")
+    x = load_xray(holdings_sig())
+    if not x:
+        st.info("No look-through data available. Refresh the composition snapshot "
+                "in `data/lookthrough/` to enable this view.")
+        return
+
+    comp, total, s = x["companies"], x["total"], x["stats"]
+    meta_cols = ("Ticker", "Name", "Total", "Weight", "Funds")
+    # a holding with no composition data contributes an all-zero column
+    funds = [c for c in comp.columns if c not in meta_cols and comp[c].abs().sum() > 0]
+    overlap = sum(v for k, v in s["by_fund_count"].items() if k >= 3)
+
+    if x["unmapped"]:
+        names = ", ".join(f"<b>{k}</b> ({fmt_money0(v)})" for k, v in x["unmapped"].items())
+        flag("warn", f"{names} has no published composition on file, so it sits "
+                     "outside every breakdown below and is counted as cash.")
+
+    st.caption(
+        f"Every fund resolved to the individual companies inside it, so a name held "
+        f"by more than one fund shows up once with its contributions summed. "
+        f"You hold **{s['distinct']:,} distinct securities**, but "
+        f"**{overlap / total:.0%} of the money** sits in names carried by three or "
+        f"more of your funds at once, and the ten largest are **{s['top10'] / total:.0%}**.")
+
+    m1, m2, m3, m4 = st.columns(4)
+    top = comp.iloc[0]
+    m1.metric(f"Largest single company ({top['Ticker']})", f"{top['Weight']:.2%}",
+              help=f"{fmt_money0(top['Total'])} arriving through "
+                   f"{int(top['Funds'])} separate funds.")
+    m2.metric("Top 10 companies", f"{s['top10'] / total:.1%}", help=fmt_money0(s['top10']))
+    m3.metric("Top 25 companies", f"{s['top25'] / total:.1%}", help=fmt_money0(s['top25']))
+    m4.metric("Distinct securities", f"{s['distinct']:,}",
+              help=f"{s['tail_count']:,} of them are worth under $10 each "
+                   f"({s['tail_value'] / total:.0%} of the portfolio in total).")
+
+    # ---- overlap: top names, stacked by the fund that delivers them ------
+    st.markdown("##### Where Each Company Comes From")
+    n = st.slider("Companies shown", 5, 30, 15, step=5, key="xray_n",
+                  label_visibility="collapsed")
+    head = comp.head(n).iloc[::-1]
+    fig = go.Figure()
+    for i, f in enumerate(funds):
+        fig.add_bar(
+            y=head["Ticker"], x=head[f], name=f, orientation="h",
+            marker_color=PALETTE[i % len(PALETTE)],
+            hovertemplate=("%{y} · " + f + ": %{customdata}<extra></extra>"),
+            customdata=[fmt_money0(v) for v in head[f]])
+    fig = style_fig(fig, max(320, 26 * n), legend=True)
+    fig.update_layout(barmode="stack")
+    fig.update_xaxes(tickformat="$,.0f", title=None,
+                     showticklabels=not HIDE)
+    show(fig)
+    st.caption("Bar length is total exposure to that company across every fund you "
+               "own. None of it was bought directly.")
+
+    # ---- rollups ---------------------------------------------------------
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("##### By Region")
+        items = sorted(x["region"].items(), key=lambda kv: -kv[1])
+        fig = go.Figure(go.Pie(
+            labels=[k for k, _ in items], values=[v for _, v in items], hole=.6,
+            marker=dict(colors=PALETTE), textinfo="label+percent",
+            hovertemplate="%{label}: %{percent}<extra></extra>"))
+        show(style_fig(fig, 340, legend=False))
+    with c2:
+        st.markdown("##### By Sector")
+        items = sorted(x["sector"].items(), key=lambda kv: kv[1])
+        items = [(k, v) for k, v in items if v > 0]
+        fig = go.Figure(go.Bar(
+            x=[v for _, v in items], y=[k for k, _ in items], orientation="h",
+            marker_color=GOLD, text=[f"{v:.1%}" for _, v in items],
+            textposition="outside", cliponaxis=False,
+            hovertemplate="%{y}: %{x:.2%}<extra></extra>"))
+        fig = style_fig(fig, 340, legend=False)
+        fig.update_xaxes(tickformat=".0%")
+        show(fig)
+    st.caption(f"Region covers the whole portfolio; sector covers the "
+               f"{fmt_money0(x['sector_base'])} equity sleeve of the funds that "
+               "publish per-security sectors (AVGE is region-mapped only).")
+
+    # ---- asset class -----------------------------------------------------
+    st.markdown("##### By Asset Class")
+    order = ["Public equity", "Private markets", "Bonds", "Cash", "Other"]
+    ac = [(k, x["asset"][k]) for k in order if x["asset"].get(k, 0) > 0]
+    fig = go.Figure()
+    for i, (k, v) in enumerate(ac):
+        fig.add_bar(x=[v], y=["mix"], name=k, orientation="h",
+                    marker_color=PALETTE[i % len(PALETTE)],
+                    hovertemplate=f"{k}: %{{x:.2%}}<extra></extra>")
+    fig = style_fig(fig, 150, legend=True)
+    fig.update_layout(barmode="stack")
+    fig.update_xaxes(tickformat=".0%", range=[0, 1])
+    fig.update_yaxes(showticklabels=False)
+    show(fig)
+    priv = x["asset"].get("Private markets", 0)
+    if priv:
+        flag("info", f"<b>{priv:.1%}</b> of the portfolio is in private markets — "
+                     "private-equity secondaries, private credit, infrastructure and "
+                     "real estate, all of it inside OPO. No ETF in the portfolio can "
+                     "reproduce that exposure.")
+
+    # ---- full table ------------------------------------------------------
+    st.markdown("##### Every Company, Every Fund")
+    tbl = comp[["Ticker", "Name", *funds, "Total", "Weight", "Funds"]].head(200)
+    styler = (tbl.style
+              .format({**{f: fmt_money0 for f in funds},
+                       "Total": fmt_money0, "Weight": "{:.2%}", "Funds": "{:.0f}"}))
+    st.dataframe(styler, width="stretch", hide_index=True, height=420)
+    st.caption(
+        f"Top 200 of {s['distinct']:,}. Fund compositions are the published holdings "
+        f"files as of **{x['as_of']}**, weighted by your live market values; refresh "
+        f"them by regenerating `data/lookthrough/`. {x['avge_note']}")
+
+
 def render_leverage():
     st.subheader("Leverage")
     pos, totals = load_portfolio()
@@ -1672,8 +1795,9 @@ with t_acct:
     with ac2:
         render_contributions()
 with t_analytics:
-    an1, an2, an3, an4 = st.tabs(
-        ["Benchmarks", "Factor Exposure", "Correlations", "Policy (§6)"])
+    an1, an2, an3, an4, an5 = st.tabs(
+        ["Benchmarks", "Factor Exposure", "Correlations", "Holdings X-Ray",
+         "Policy (§6)"])
     with an1:
         render_benchmarks()
     with an2:
@@ -1681,6 +1805,8 @@ with t_analytics:
     with an3:
         render_correlations()
     with an4:
+        render_xray()
+    with an5:
         render_lookthrough()
 with t_risk:
     render_leverage()

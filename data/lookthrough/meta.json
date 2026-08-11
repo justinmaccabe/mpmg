@@ -1,0 +1,290 @@
+{
+  "as_of": "2026-08-10",
+  "source": "underlying holdings.xlsx (iShares fund files + Optimize fund sheet)",
+  "funds_with_security_detail": [
+    "OPO",
+    "XUS",
+    "XEQT"
+  ],
+  "opo": {
+    "name": "Optimize All Growth Fund",
+    "mix": {
+      "Equities": 0.8501596057227401,
+      "Bonds": 0.02740662431891053,
+      "Privates": 0.1224337699583495
+    },
+    "sector": {
+      "Information Technology": 0.2796733714957133,
+      "Financials": 0.2423972025272112,
+      "Consumer Discretionary": 0.1167084850445753,
+      "Communication Services": 0.09650390119553467,
+      "Industrials": 0.06837856622102613,
+      "Health Care": 0.05934159808408433,
+      "Energy": 0.04638815663574817,
+      "Consumer Staples": 0.04506449088995217,
+      "Real Estate": 0.02444590579166174,
+      "Utilities": 0.01517759520810567,
+      "Materials": 0.005920726906387211
+    },
+    "country": {
+      "United States": 0.867679568078974,
+      "Canada": 0.1138865344490491,
+      "Ireland": 0.005841360907703833,
+      "Britain": 0.004996439783788476,
+      "Netherlands": 0.002710625875956916,
+      "Bermuda": 0.001984377579625229,
+      "Germany": 0.001453403491387968,
+      "Japan": 0.001045701802422936,
+      "Denmark": 0.0004019880310915923
+    }
+  },
+  "avge": {
+    "name": "Avantis All Equity Markets ETF",
+    "as_of": "2026-07-30",
+    "note": "Workbook tab was empty; sleeve weights from Avantis, sleeve holdings from AVUS/AVLV top-25 (2026-08-06/07).",
+    "sleeves": {
+      "AVUS": 42.73,
+      "AVLV": 15.51,
+      "AVDE": 10.68,
+      "AVEM": 6.39,
+      "AVIV": 5.51,
+      "AVUV": 3.63,
+      "AVSC": 3.55,
+      "AVES": 3.2,
+      "AVRE": 2.86,
+      "AVMV": 1.41,
+      "AVMC": 1.37,
+      "AVDV": 1.18,
+      "AVDS": 1.04,
+      "AVEE": 0.84,
+      "CASH": 0.11
+    },
+    "sleeve_region": {
+      "AVUS": "United States",
+      "AVLV": "United States",
+      "AVUV": "United States",
+      "AVSC": "United States",
+      "AVMV": "United States",
+      "AVMC": "United States",
+      "AVDE": "Intl developed",
+      "AVIV": "Intl developed",
+      "AVDV": "Intl developed",
+      "AVDS": "Intl developed",
+      "AVEM": "Emerging markets",
+      "AVES": "Emerging markets",
+      "AVEE": "Emerging markets",
+      "CASH": "Cash"
+    },
+    "avre_split": {
+      "United States": 0.7,
+      "Intl developed": 0.25,
+      "Emerging markets": 0.05
+    },
+    "sleeve_holdings": {
+      "AVUS": [
+        [
+          "NVDA",
+          5.52
+        ],
+        [
+          "AAPL",
+          5.31
+        ],
+        [
+          "MSFT",
+          4.26
+        ],
+        [
+          "AMZN",
+          3.62
+        ],
+        [
+          "GOOGL",
+          2.12
+        ],
+        [
+          "MU",
+          2.08
+        ],
+        [
+          "META",
+          2.02
+        ],
+        [
+          "GOOG",
+          1.72
+        ],
+        [
+          "JPM",
+          1.4
+        ],
+        [
+          "AVGO",
+          1.19
+        ],
+        [
+          "XOM",
+          1.15
+        ],
+        [
+          "LLY",
+          1.01
+        ],
+        [
+          "LRCX",
+          0.85
+        ],
+        [
+          "CAT",
+          0.78
+        ],
+        [
+          "V",
+          0.75
+        ],
+        [
+          "COST",
+          0.7
+        ],
+        [
+          "BRK.B",
+          0.68
+        ],
+        [
+          "AMD",
+          0.63
+        ],
+        [
+          "JNJ",
+          0.62
+        ],
+        [
+          "MRK",
+          0.61
+        ],
+        [
+          "WMT",
+          0.59
+        ],
+        [
+          "TSLA",
+          0.57
+        ],
+        [
+          "CVX",
+          0.56
+        ],
+        [
+          "MA",
+          0.55
+        ],
+        [
+          "AMAT",
+          0.54
+        ]
+      ],
+      "AVLV": [
+        [
+          "MSFT",
+          3.29
+        ],
+        [
+          "AMZN",
+          3.05
+        ],
+        [
+          "AAPL",
+          2.96
+        ],
+        [
+          "MU",
+          2.7
+        ],
+        [
+          "COST",
+          2.44
+        ],
+        [
+          "JPM",
+          2.4
+        ],
+        [
+          "XOM",
+          2.39
+        ],
+        [
+          "META",
+          2.38
+        ],
+        [
+          "UNP",
+          1.71
+        ],
+        [
+          "VZ",
+          1.67
+        ],
+        [
+          "QCOM",
+          1.61
+        ],
+        [
+          "MS",
+          1.57
+        ],
+        [
+          "TJX",
+          1.52
+        ],
+        [
+          "LLY",
+          1.31
+        ],
+        [
+          "COP",
+          1.25
+        ],
+        [
+          "GS",
+          1.25
+        ],
+        [
+          "DE",
+          1.23
+        ],
+        [
+          "MRK",
+          1.23
+        ],
+        [
+          "PGR",
+          1.14
+        ],
+        [
+          "WFC",
+          1.14
+        ],
+        [
+          "TRV",
+          1.13
+        ],
+        [
+          "CSX",
+          1.09
+        ],
+        [
+          "CB",
+          1.08
+        ],
+        [
+          "AXP",
+          1.07
+        ],
+        [
+          "GM",
+          1.07
+        ]
+      ]
+    }
+  }
+}

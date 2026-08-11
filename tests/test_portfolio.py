@@ -158,5 +158,58 @@ class TestFxHelpers(unittest.TestCase):
         self.assertIsNotNone(mw["xirr"])
 
 
+class TestSecurityLookthrough(unittest.TestCase):
+    """Runs against the real data/lookthrough/ snapshot; skips if absent."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.x = portfolio.security_lookthrough(_positions(), _instruments())
+        if not cls.x:
+            raise unittest.SkipTest("no look-through snapshot on disk")
+
+    def test_rollups_are_exhaustive(self):
+        # asset class must account for every dollar; region covers everything
+        # except the fund-level cash residual the ETFs carry
+        self.assertAlmostEqual(sum(self.x["asset"].values()), 1.0, places=6)
+        self.assertAlmostEqual(sum(self.x["sector"].values()), 1.0, places=6)
+        self.assertGreater(sum(self.x["region"].values()), 0.99)
+        self.assertLessEqual(sum(self.x["region"].values()), 1.0)
+
+    def test_no_blank_buckets(self):
+        # blank sector/country cells read as NaN out of the CSV and are truthy;
+        # letting one through silently invents an "Emerging markets" bucket
+        for key in ("region", "sector", "asset"):
+            for name in self.x[key]:
+                self.assertIsInstance(name, str)
+                self.assertTrue(name.strip())
+                self.assertNotEqual(name.lower(), "nan")
+        self.assertNotIn("Cash", self.x["region"])
+
+    def test_company_total_equals_sum_of_funds(self):
+        comp = self.x["companies"]
+        funds = [c for c in comp.columns
+                 if c not in ("Ticker", "Name", "Total", "Weight", "Funds")]
+        top = comp.iloc[0]
+        self.assertAlmostEqual(top["Total"], sum(top[f] for f in funds), places=6)
+        self.assertEqual(int(top["Funds"]), sum(1 for f in funds if top[f] > 0))
+
+    def test_overlapping_name_beats_every_single_fund_slice(self):
+        # the point of the view: a name held four ways outranks each of its parts
+        comp = self.x["companies"].set_index("Ticker")
+        self.assertGreater(int(comp.loc["NVDA", "Funds"]), 1)
+        self.assertGreater(comp.loc["NVDA", "Total"], comp.loc["NVDA", "XUS"])
+
+    def test_unmapped_holdings_are_reported_not_dropped(self):
+        pos = pd.concat([_positions(),
+                         pd.DataFrame([{"Ticker": "ZMMK", "Market Value": 500.0}])])
+        x = portfolio.security_lookthrough(pos, _instruments())
+        self.assertEqual(x["unmapped"], {"ZMMK": 500.0})
+        self.assertAlmostEqual(sum(x["asset"].values()), 1.0, places=6)
+
+    def test_empty_positions_return_empty(self):
+        empty = pd.DataFrame(columns=["Ticker", "Market Value"])
+        self.assertEqual(portfolio.security_lookthrough(empty, _instruments()), {})
+
+
 if __name__ == "__main__":
     unittest.main()
