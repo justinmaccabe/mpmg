@@ -960,14 +960,31 @@ def twr_series(snapshots: pd.DataFrame) -> pd.Series:
     first value is already 100x(1+r1), so a "growth of $100" chart never actually
     starts at 100 and any resampled view (weekly, monthly) opens mid-move.
     """
-    if snapshots is None or snapshots.empty or "daily_pnl_pct" not in snapshots:
+    return _chain_index(snapshots, "daily_pnl_pct")
+
+
+def benchmark_twr_series(snapshots: pd.DataFrame) -> pd.Series:
+    """Growth-of-100 index for the benchmark, from the recorded daily percentages.
+
+    Built from `benchmark_pct` on the same snapshot rows as the portfolio's own
+    index, so the two series share their dates exactly and neither can drift
+    against the other. No price fetch is involved: the comparison uses what was
+    recorded on each day, in the same currency as the portfolio.
+    """
+    return _chain_index(snapshots, "benchmark_pct")
+
+
+def _chain_index(snapshots: pd.DataFrame, column: str) -> pd.Series:
+    """Chain-link a column of daily returns into a growth-of-100 index, opening
+    with an explicit 100 on the day before the first return."""
+    if snapshots is None or snapshots.empty or column not in snapshots:
         return pd.Series(dtype=float)
-    s = snapshots.dropna(subset=["daily_pnl_pct"]).copy()
+    s = snapshots.dropna(subset=[column]).copy()
     if s.empty:
         return pd.Series(dtype=float)
     s["date"] = pd.to_datetime(s["date"])
     s = s.sort_values("date").set_index("date")
-    index = (1 + s["daily_pnl_pct"].astype(float)).cumprod() * 100
+    index = (1 + s[column].astype(float)).cumprod() * 100
     inception = index.index[0] - pd.Timedelta(days=1)
     return pd.concat([pd.Series([100.0], index=[inception]), index])
 

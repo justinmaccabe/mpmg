@@ -606,7 +606,7 @@ def render_overview():
         snaps = db.get_snapshots_df()
         if len(snaps):
             snaps = snaps.assign(date=pd.to_datetime(snaps["date"]))
-            fc1, fc2 = st.columns([3, 2])
+            fc1, fc2, fc3 = st.columns([3, 2, 2], vertical_alignment="center")
             with fc1:
                 freq = st.segmented_control(
                     "Frequency", ["Daily", "Weekly", "Monthly"], default="Daily",
@@ -615,6 +615,18 @@ def render_overview():
                 view = st.segmented_control(
                     "View", ["Value", "Growth"], default="Value",
                     label_visibility="collapsed", key="perf_view") or "Value"
+            with fc3:
+                # Only offered on the growth view: there both lines are a
+                # growth-of-100 index, so they are directly comparable. On the
+                # value view the portfolio line also rises with contributions,
+                # and drawing an index beside it would read as performance.
+                show_bench = st.checkbox(
+                    "S&P 500", value=False, key="perf_bench",
+                    disabled=(view != "Growth"),
+                    help=("Overlay the S&P 500 (VFV, in CAD) on the growth index."
+                          if view == "Growth" else
+                          "Switch to Growth to compare: the value line includes "
+                          "contributions, so an index beside it would mislead."))
             rule = {"Weekly": "W", "Monthly": "ME"}.get(freq)
             s = snaps.set_index("date")
             if rule:
@@ -656,12 +668,29 @@ def render_overview():
                     + g["date"].iloc[0].strftime("%b %d, %Y")
                 )
                 fig.add_trace(go.Scatter(
-                    x=g["_lbl"], y=g["growth"], mode="lines+markers", name="Growth",
-                    connectgaps=True, line=dict(color=GOLD, width=2),
-                    marker=dict(size=7),
-                    hovertemplate="%{x}: $%{y:.2f}<extra>Growth of $100</extra>"))
+                    x=g["_lbl"], y=g["growth"], mode="lines+markers",
+                    name="Portfolio", connectgaps=True,
+                    line=dict(color=GOLD, width=2), marker=dict(size=7),
+                    hovertemplate="%{x}: $%{y:.2f}<extra>Portfolio</extra>"))
+                bench_end = None
+                if show_bench:
+                    # Same rows, same dates, same rebasing as the portfolio index,
+                    # so the two lines are comparable point for point.
+                    b_full = portfolio.benchmark_twr_series(snaps)
+                    if len(b_full) > 1:
+                        b_r = (
+                            pd.concat([b_full.iloc[[0]],
+                                       b_full.iloc[1:].resample(rule).last()])
+                            if rule else b_full
+                        ).dropna().reindex(pd.to_datetime(g["date"]))
+                        bench_end = b_r.dropna().iloc[-1] if b_r.notna().any() else None
+                        fig.add_trace(go.Scatter(
+                            x=g["_lbl"], y=b_r.to_numpy(), mode="lines",
+                            name="S&P 500", connectgaps=True,
+                            line=dict(color="#F4F4F4", width=2, dash="dash"),
+                            hovertemplate="%{x}: $%{y:.2f}<extra>S&P 500</extra>"))
                 fig.add_hline(y=100, line=dict(color="#6B7078", width=1, dash="dot"))
-                fig = style_fig(fig, 340, legend=False)
+                fig = style_fig(fig, 340, legend=bool(show_bench))
                 fig.update_yaxes(title="Growth of $100 invested", tickformat="$,.2f")
                 fig.update_xaxes(type="category", categoryorder="array",
                                  categoryarray=g["_lbl"].tolist())
@@ -708,10 +737,19 @@ def render_overview():
                 else:
                     col.metric(lbl, "—")
             if view == "Growth":
-                st.caption("Growth of $100 invested at the start of tracking — "
-                           "time-weighted, so contributions are normalized out and "
-                           "only investment performance shows. This is the same series "
-                           "as the TWR figure above.")
+                cap = ("Growth of $100 invested at the start of tracking — "
+                       "time-weighted, so contributions are normalized out and "
+                       "only investment performance shows. This is the same series "
+                       "as the TWR figure above.")
+                if show_bench and bench_end is not None:
+                    port_ret = float(g["growth"].iloc[-1]) - 100.0
+                    diff = port_ret - (float(bench_end) - 100.0)
+                    cap += (f" Since inception: portfolio {port_ret:+.2f}% vs "
+                            f"S&P 500 {float(bench_end) - 100.0:+.2f}% — "
+                            f"{abs(diff):.2f}pp {'ahead' if diff >= 0 else 'behind'}. "
+                            "Benchmark is VFV (S&P 500 in CAD), from the percentage "
+                            "recorded on each snapshot date.")
+                st.caption(cap)
             else:
                 st.caption("Open and close values are recorded each trading day; weekly "
                            "and monthly views reflect period-end closes. Book Value is "
