@@ -28,6 +28,17 @@ def _utc_hour_for_et(hour, minute):
             .astimezone(dt.timezone.utc).hour)
 
 
+def _trading_date():
+    """The trading day in market time, not the runner's.
+
+    GitHub runners are UTC and its scheduler routinely fires a cron hours late.
+    A run at 11pm ET is already tomorrow in UTC, so dt.date.today() filed Friday's
+    close under Saturday — which is how a market-closed day appeared in the
+    history and Friday's close went missing.
+    """
+    return dt.datetime.now(ET).date()
+
+
 def _resolve_slot():
     """Return 'open', 'close', or None (skip) for this invocation.
 
@@ -50,7 +61,12 @@ def _resolve_slot():
         return "open" if dt.datetime.now(ET).hour < 12 else "close"
     cron_hour = int(cron.split()[1])
     if cron_hour in OPEN_CRON_HOURS:
-        return "open" if cron_hour == _utc_hour_for_et(9, 35) else None
+        if cron_hour != _utc_hour_for_et(9, 35):
+            return None
+        # A scheduled open that GitHub finally runs in the afternoon captures a
+        # post-market price, not an opening one. Filing it as the close keeps the
+        # day's return without inventing an "open" that equals the close.
+        return "open" if dt.datetime.now(ET).hour < 12 else "close"
     if cron_hour in CLOSE_CRON_HOURS:
         return "close" if cron_hour == _utc_hour_for_et(16, 5) else None
     return None
@@ -77,7 +93,7 @@ def _today_row():
     snaps = db.get_snapshots_df()
     if snaps.empty:
         return None
-    today = dt.date.today()
+    today = _trading_date()
     match = snaps[pd.to_datetime(snaps["date"]).dt.date == today]
     return match.iloc[-1] if len(match) else None
 
@@ -113,7 +129,7 @@ def main():
         mv_open = float(prev_open) if prev_open is not None and pd.notna(prev_open) else mv
 
     row = {
-        "date": dt.date.today(),
+        "date": _trading_date(),
         "market_value": mv_close,
         "market_value_open": mv_open,
         "book_value": totals["book_value"],
