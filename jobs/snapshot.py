@@ -38,6 +38,13 @@ def _resolve_slot():
     GitHub's scheduling delays from misclassifying a run. Manual runs (no cron)
     are classified by ET hour.
     """
+    # Markets are shut at the weekend, so a run then re-reads Friday's closes and
+    # records them as a fresh day. The chain-linked return series then counts
+    # Friday's move twice. The scheduled crons are weekday-only; this guards the
+    # manual "Fetch fresh prices" button, which can be pressed any day.
+    if dt.datetime.now(ET).weekday() >= 5:
+        return None
+
     cron = os.environ.get("SCHEDULE_CRON", "").strip()
     if not cron:
         return "open" if dt.datetime.now(ET).hour < 12 else "close"
@@ -78,8 +85,12 @@ def _today_row():
 def main():
     slot = _resolve_slot()
     if slot is None:
-        print(f"Skipping: {os.environ.get('SCHEDULE_CRON', '').strip()} is not the "
-              "DST-correct open run for the current ET offset.")
+        if dt.datetime.now(ET).weekday() >= 5:
+            print("Skipping: market closed (weekend). Recording now would replay "
+                  "Friday's move as a second day.")
+        else:
+            print(f"Skipping: {os.environ.get('SCHEDULE_CRON', '').strip()} is not "
+                  "the DST-correct open run for the current ET offset.")
         return
 
     db.init_db()

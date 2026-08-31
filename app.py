@@ -815,22 +815,34 @@ def render_overview():
     if len(_sn) and "market_value_open" in _sn.columns:
         d = _sn.assign(date=pd.to_datetime(_sn["date"])).sort_values("date")
         d["prev_close"] = d["market_value"].shift(1)
-        tbl = pd.DataFrame({
-            "Date": d["date"].dt.strftime("%b %d, %Y"),
+        num = pd.DataFrame({
             "Open": d["market_value_open"],
             "Intraday": d["market_value"] - d["market_value_open"],
             "Close": d["market_value"],
             "Overnight": d["market_value_open"] - d["prev_close"],
             "24h Return": d["market_value"] / d["prev_close"] - 1,
         }).iloc[::-1].reset_index(drop=True)
+        # Formatted to strings here rather than through Styler.format(na_rep=...):
+        # a missing close rendered as "None" on the deployed pandas while showing
+        # "—" locally. Colours come from the numbers alongside, so a blank cell
+        # stays blank instead of being coloured as if it were a zero.
+        def _pct(v):
+            return "—" if pd.isna(v) else f"{v:+.2%}"
+        tbl = pd.DataFrame({
+            "Date": d["date"].dt.strftime("%b %d, %Y").iloc[::-1]
+                    .reset_index(drop=True),
+            "Open": num["Open"].map(fmt_money0),
+            "Intraday": num["Intraday"].map(fmt_signed),
+            "Close": num["Close"].map(fmt_money0),
+            "Overnight": num["Overnight"].map(fmt_signed),
+            "24h Return": num["24h Return"].map(_pct),
+        })
+        colours = pd.DataFrame("", index=tbl.index, columns=tbl.columns)
+        for _c in ("Intraday", "Overnight", "24h Return"):
+            colours[_c] = num[_c].map(color_pnl)
         st.subheader("Daily Open & Close")
         st.dataframe(
-            tbl.style.format({
-                "Open": fmt_money0, "Close": fmt_money0,
-                "Intraday": fmt_signed, "Overnight": fmt_signed,
-                "24h Return": lambda v: "—" if pd.isna(v) else f"{v:+.2%}"},
-                na_rep="—")
-            .map(color_pnl, subset=["Intraday", "Overnight", "24h Return"]),
+            tbl.style.apply(lambda _: colours, axis=None),
             width="stretch", hide_index=True)
         st.caption("Intraday = close − open · Overnight = open − prior close · "
                    "24h Return = close vs prior close (overnight + intraday).")
