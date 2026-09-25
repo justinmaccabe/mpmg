@@ -60,6 +60,11 @@ SEED_CONTRIBUTIONS = [
 ]
 
 
+# The Postgres DBAPI this app installs and is tested against; keep in step
+# with the psycopg entry in requirements.txt.
+PG_DRIVER = "postgresql+psycopg://"
+
+
 def _database_url():
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -71,13 +76,20 @@ def _database_url():
     if not url:
         here = os.path.dirname(os.path.abspath(__file__))
         return f"sqlite:///{os.path.join(here, 'stonks.db')}"
-    # SQLAlchemy wants postgresql+psycopg2:// ; accept the plain postgres:// form too
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+    # Name the driver explicitly. A bare postgresql:// URL lets SQLAlchemy pick,
+    # and which DBAPI it picks changed between releases: 2.0 chose psycopg2, a
+    # later version chose psycopg 3, so the deployed app went looking for a driver
+    # that was never in requirements.txt while the same URL worked locally.
+    # Anything that already names a driver (postgresql+psycopg2://, ...) is left
+    # alone so an explicit choice in the secret still wins.
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            url = PG_DRIVER + url[len(prefix):]
+            break
     return url
 
 
-engine = create_engine(_database_url(), future=True)
+engine = create_engine(_database_url())
 metadata = MetaData()
 
 instruments = Table(
@@ -329,7 +341,7 @@ def set_manual_price(ticker, price):
 
 def upsert_snapshot(row: dict):
     """Insert or replace the snapshot for row['date']."""
-    # Coerce numpy scalars (np.float64 etc.) to native Python types — psycopg2
+    # Coerce numpy scalars (np.float64 etc.) to native Python types — psycopg
     # cannot adapt numpy values, unlike SQLite which silently tolerates them.
     row = {k: (v.item() if hasattr(v, "item") else v) for k, v in row.items()}
     d = row["date"]
